@@ -1,0 +1,24 @@
+# Dependencias
+node_modules/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+
+# Credenciales — NUNCA subir claves de cuenta de servicio
+*service-account*.json
+serviceAccountKey.json
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Temporales
+*.tmp
+*.bak

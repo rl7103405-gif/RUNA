@@ -1,0 +1,94 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════
+// Reglas de producción — Sistema de Muestristas · Deportivos Quini
+//
+// Contexto: la app NO usa Firebase Auth (el login es por PIN de 6 dígitos
+// validado en el cliente contra la colección `pines`). Por eso estas reglas
+// no pueden distinguir usuarios; lo que sí hacen es:
+//   1. Reemplazar el "modo prueba" que vence a los 30 días (sin estas
+//      reglas, la app dejaría de funcionar al vencer).
+//   2. Limitar el acceso EXCLUSIVAMENTE a las 4 colecciones de la app —
+//      cualquier otra colección queda bloqueada.
+//   3. Validar la forma de los datos (tipos, estados válidos, formato de
+//      PIN, usuarios conocidos) para que un cliente con errores o un
+//      tercero no pueda corromper los documentos.
+//   4. Prohibir borrados: el historial de fichas es un registro de trabajo.
+//
+// Mejora futura (cuando se active el plan Blaze / Firebase Auth): usar
+// Auth anónimo + custom claims para amarrar cada rol a su dispositivo.
+//
+// Despliegue:  firebase deploy --only firestore:rules
+// ═══════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──
+    function esUsuario(uid) {
+      return uid in ['lety', 'israel', 'jesus'];
+    }
+    function esMuestrista(uid) {
+      return uid in ['israel', 'jesus'];
+    }
+    function estadoCapturaValido(e) {
+      return e in ['activo', 'pausado', 'pendiente_lety', 'correccion', 'aprobado'];
+    }
+    function estadoDesarrolloValido(e) {
+      return e in ['pendiente', 'en_proceso'];
+    }
+
+    // ── desarrollos: tareas que Lety asigna ──
+    match /desarrollos/{devId} {
+      allow read: if true;
+      allow create: if request.resource.data.modelo is string
+                    && request.resource.data.modelo.size() > 0
+                    && esMuestrista(request.resource.data.asignado_a)
+                    && estadoDesarrolloValido(request.resource.data.estado)
+                    && request.resource.data.tipo_complejidad in ['A', 'B', 'C']
+                    && request.resource.data.variantes is list
+                    && request.resource.data.variantes.size() > 0;
+      allow update: if estadoDesarrolloValido(request.resource.data.estado);
+      allow delete: if false;
+    }
+
+    // ── capturas: fichas prácticas (una por variante) ──
+    match /capturas/{capId} {
+      allow read: if true;
+      allow create: if esMuestrista(request.resource.data.id_muestrista)
+                    && request.resource.data.id_desarrollo is string
+                    && request.resource.data.codigo_variante is string
+                    && request.resource.data.estado == 'activo'
+                    && request.resource.data.elapsed_seg is number
+                    && request.resource.data.tm_seg is number;
+      allow update: if estadoCapturaValido(request.resource.data.estado)
+                    // El dueño y el desarrollo de origen no se pueden reasignar
+                    && request.resource.data.id_muestrista == resource.data.id_muestrista
+                    && request.resource.data.id_desarrollo == resource.data.id_desarrollo
+                    && request.resource.data.elapsed_seg is number
+                    && request.resource.data.tm_seg is number;
+      allow delete: if false;
+    }
+
+    // ── pines: PIN de acceso por usuario (doc id = uid) ──
+    match /pines/{uid} {
+      allow read: if esUsuario(uid);
+      allow write: if esUsuario(uid)
+                   && request.resource.data.keys().hasOnly(['pin'])
+                   && request.resource.data.pin is string
+                   && request.resource.data.pin.matches('^[0-9]{6}$');
+    }
+
+    // ── _ping: test de conectividad (write de prueba al arrancar) ──
+    match /_ping/{docId} {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasOnly(['ts'])
+                   && request.resource.data.ts is number;
+    }
+
+    // ── Todo lo demás: bloqueado ──
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

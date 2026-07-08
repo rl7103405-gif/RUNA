@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<title>Muestristas · Deportivos Quini</title>
+<!-- iOS PWA -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Quini Muestristas">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjMEQxMTE3Ii8+PHRleHQgeD0iOTAiIHk9IjExNSIgZm9udC1zaXplPSI5MCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+8J+nljwvdGV4dD48L3N2Zz4=">
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0D1117;--s1:#161B22;--s2:#1C2128;--b1:#21262D;--b2:#30363D;--b3:#484F58;
+  --am:#F5A623;--am-bg:rgba(245,166,35,.13);--am-bd:rgba(245,166,35,.3);
+  --gn:#3FB950;--gn-bg:rgba(63,185,80,.12);--gn-bd:rgba(63,185,80,.3);
+  --rd:#F85149;--rd-bg:rgba(248,81,73,.12);--rd-bd:rgba(248,81,73,.3);
+  --bl:#58A6FF;--bl-bg:rgba(88,166,255,.12);--bl-bd:rgba(88,166,255,.3);
+  --pu:#D2A8FF;--pu-bg:rgba(210,168,255,.15);
+  --tx:#E6EDF3;--tx2:#8B949E;--tx3:#484F58;
+  --r:10px;--r2:14px;
+}
+html,body{background:var(--bg);color:var(--tx);font-family:'Space Grotesk',system-ui,sans-serif;height:100%;overflow:hidden}
+/* iOS safe areas (notch / home bar) */
+.hdr{padding-top:max(12px, env(safe-area-inset-top))}
+.bnav{padding-bottom:env(safe-area-inset-bottom)}
+.lwrap{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.scr{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;overflow:hidden;z-index:10}
+.scr.on{display:flex}
+.hdr{background:var(--s1);border-bottom:1px solid var(--b1);padding:12px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0;min-height:52px}
+.hdr h1{font-size:15px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.body{flex:1;overflow-y:auto;padding:14px 14px 80px}
+.bnav{position:absolute;bottom:0;left:0;right:0;background:var(--s1);border-top:1px solid var(--b1);display:flex;height:58px;z-index:20}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;color:var(--tx3);background:none;border:none;cursor:pointer;font-family:inherit;transition:color .15s}
+.nb.on{color:var(--am)}
+.nb .ico{font-size:20px}
+.tp{display:none}.tp.on{display:block}
+/* CARDS */
+.card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r2);padding:14px;margin-bottom:12px}
+.card.am{border-color:var(--am-bd);background:var(--am-bg)}
+.card.gn{border-color:var(--gn-bd);background:var(--gn-bg)}
+.card.bl{border-color:var(--bl-bd);background:var(--bl-bg)}
+.card.rd{border-color:var(--rd-bd);background:var(--rd-bg)}
+/* FORMS */
+.fg{margin-bottom:12px}
+.fl{font-size:11px;color:var(--tx2);text-transform:uppercase;letter-spacing:.05em;font-weight:600;display:block;margin-bottom:5px}
+.fi{width:100%;background:var(--s2);color:var(--tx);border:1px solid var(--b2);border-radius:var(--r);padding:10px 12px;font-size:14px;font-family:inherit;outline:none;appearance:none;-webkit-appearance:none}
+.fi:focus{border-color:var(--am)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.fsec{background:var(--s2);border-radius:var(--r);padding:12px;margin-bottom:12px;border:1px solid var(--b1)}
+.ftitle{font-size:12px;font-weight:700;color:var(--am);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+/* BUTTONS */
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:12px 16px;border-radius:var(--r);font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;border:none;width:100%;margin-bottom:8px;transition:opacity .12s,transform .1s}
+.btn:active{transform:scale(.96);opacity:.8}
+.btn-am{background:var(--am);color:#000}
+.btn-gn{background:var(--gn);color:#000}
+.btn-rd{background:var(--rd-bg);color:var(--rd);border:1px solid var(--rd-bd)}
+.btn-gh{background:var(--s2);color:var(--tx);border:1px solid var(--b2)}
+.btn-bl{background:var(--bl-bg);color:var(--bl);border:1px solid var(--bl-bd)}
+.btn-sm{padding:8px 12px;font-size:12px;margin-bottom:0}
+.brow{display:flex;gap:8px;margin-bottom:8px}
+/* BADGES */
+.bge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700}
+.bok{background:var(--gn-bg);color:var(--gn)}
+.bpend{background:var(--am-bg);color:var(--am)}
+.rbA{font-size:11px;padding:2px 8px;border-radius:12px;background:var(--pu-bg);color:var(--pu);border:1px solid rgba(210,168,255,.3)}
+.rbM{font-size:11px;padding:2px 8px;border-radius:12px;background:var(--bl-bg);color:var(--bl);border:1px solid var(--bl-bd)}
+/* LOGIN / PIN */
+.lwrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px;gap:12px}
+.lcard{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r2);padding:20px;width:100%;max-width:340px}
+.ubtn{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:10px;width:100%;font-family:inherit;color:var(--tx);text-align:left;transition:border-color .15s}
+.ubtn:last-child{margin-bottom:0}
+.ubtn:active{background:var(--b1)}
+.pin-dots{display:flex;gap:14px;justify-content:center;margin:18px 0}
+.pd{width:14px;height:14px;border-radius:50%;background:var(--b2);transition:background .15s,transform .1s}
+.pd.on{background:var(--am);transform:scale(1.2)}
+.numpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:256px;margin:0 auto}
+.nk{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r2);height:64px;font-size:22px;font-weight:600;cursor:pointer;font-family:'Space Grotesk',sans-serif;color:var(--tx);transition:background .1s,transform .1s}
+.nk:active{background:var(--am);color:#000;transform:scale(.94)}
+.nk.del{font-size:18px}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-10px)}40%,80%{transform:translateX(10px)}}
+.shake{animation:shake .35s ease}
+/* TIMER */
+.timer{font-family:'JetBrains Mono',monospace;font-size:36px;font-weight:700;text-align:center;padding:8px 0;letter-spacing:.04em}
+.tgn{color:var(--gn)}.tam{color:var(--am)}.ttx{color:var(--tx2)}
+.trow{display:flex;justify-content:space-between;font-size:12px;color:var(--tx2);margin-top:4px}
+/* MODAL */
+.ovl{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:none;align-items:flex-end;justify-content:center}
+.ovl.on{display:flex}
+.msheet{background:var(--s1);border-radius:18px 18px 0 0;padding:20px;width:100%;max-height:88vh;overflow-y:auto}
+/* SIGNATURE */
+#sig-cv{width:100%;height:200px;background:var(--s2);border-radius:var(--r);border:2px dashed var(--b2);display:block;touch-action:none;cursor:crosshair}
+/* TABLES */
+table.mt{width:100%;border-collapse:collapse;font-size:13px}
+table.mt th{background:var(--s2);color:var(--tx2);font-size:10px;padding:7px 4px;text-align:center;border:1px solid var(--b1);font-weight:600;text-transform:uppercase}
+table.mt td{padding:4px 2px;border:1px solid var(--b1);text-align:center}
+table.mt td.lbl{font-size:11px;color:var(--tx2);text-align:left;padding:6px 8px;background:var(--s2)}
+table.mt input{background:var(--bg);color:var(--tx);border:none;text-align:center;width:100%;font-size:13px;font-family:inherit;padding:5px 2px;outline:none}
+/* MISC */
+.stitle{font-size:12px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;margin-top:4px}
+.empty{text-align:center;padding:36px 20px;color:var(--tx2)}
+.empty .ico{font-size:32px;margin-bottom:8px}
+.mr{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--tx2);margin-top:4px}
+.dt{font-size:15px;font-weight:700;margin-bottom:2px}
+.ds{font-size:12px;color:var(--tx2)}
+.al{border-radius:var(--r);padding:10px 12px;font-size:13px;display:flex;gap:8px;margin-bottom:10px}
+.alw{background:var(--am-bg);border:1px solid var(--am-bd)}
+.ali{background:var(--bl-bg);border:1px solid var(--bl-bd)}
+.vcod{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--bl)}
+.vi{background:var(--s2);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;border:1px solid var(--b1)}
+.prog{background:var(--b1);border-radius:4px;height:6px;overflow:hidden;margin-top:6px}
+.pf{height:100%;border-radius:4px}
+/* MODE SELECTOR */
+.mode-sel{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.ms-btn{background:var(--s2);border:2px solid var(--b2);border-radius:var(--r);padding:12px 8px;text-align:center;cursor:pointer;font-family:inherit;color:var(--tx);font-size:13px;font-weight:600;transition:all .15s}
+.ms-btn.on{border-color:var(--am);background:var(--am-bg);color:var(--am)}
+/* CONFIG */
+.pin-row{display:flex;align-items:center;justify-content:space-between;background:var(--s2);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;border:1px solid var(--b1)}
+/* TOAST */
+#toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--s1);border:1px solid var(--b2);border-radius:var(--r);padding:10px 18px;font-size:13px;z-index:200;display:none;white-space:nowrap;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--b3);border-radius:2px}
+</style>
+</head>
+<body>
+
+<!-- ════ s0: USER SELECT ════ -->
+<div id="s0" class="scr on">
+  <div class="lwrap">
+    <div style="font-size:48px">🧦</div>
+    <div style="font-size:22px;font-weight:700;color:var(--am)">Deportivos Quini</div>
+    <div style="font-size:13px;color:var(--tx2)">Sistema de Muestristas</div>
+    <div id="fb-st" style="font-size:11px;color:var(--tx3)">Conectando…</div>
+    <div class="lcard">
+      <div style="font-size:12px;color:var(--tx2);margin-bottom:12px;text-align:center">¿Quién eres?</div>
+      <button class="ubtn" onclick="selectUser('lety')">
+        <span style="font-size:24px">👩‍💼</span>
+        <div><div style="font-size:15px;font-weight:600">Lety</div><div style="font-size:11px;color:var(--tx2)">Administración</div></div>
+      </button>
+      <button class="ubtn" onclick="selectUser('israel')">
+        <span style="font-size:24px">👨‍🔧</span>
+        <div><div style="font-size:15px;font-weight:600">Israel</div><div style="font-size:11px;color:var(--tx2)">Muestrista</div></div>
+      </button>
+      <button class="ubtn" onclick="selectUser('jesus')">
+        <span style="font-size:24px">👨‍🔧</span>
+        <div><div style="font-size:15px;font-weight:600">Jesús</div><div style="font-size:11px;color:var(--tx2)">Muestrista</div></div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ s1: PIN ENTRY ════ -->
+<div id="s1" class="scr">
+  <div class="lwrap">
+    <div id="pin-ico" style="font-size:44px">👩‍💼</div>
+    <div id="pin-name" style="font-size:18px;font-weight:700"></div>
+    <div style="font-size:13px;color:var(--tx2)">Ingresa tu PIN</div>
+    <div id="pin-dots-wrap">
+      <div class="pin-dots" id="pin-dots">
+        <div class="pd" id="pd0"></div><div class="pd" id="pd1"></div><div class="pd" id="pd2"></div>
+        <div class="pd" id="pd3"></div><div class="pd" id="pd4"></div><div class="pd" id="pd5"></div>
+      </div>
+    </div>
+    <div id="pin-err" style="font-size:12px;color:var(--rd);height:16px;text-align:center"></div>
+    <div class="numpad" style="margin-top:8px">
+      <button class="nk" onclick="numPad(1)">1</button>
+      <button class="nk" onclick="numPad(2)">2</button>
+      <button class="nk" onclick="numPad(3)">3</button>
+      <button class="nk" onclick="numPad(4)">4</button>
+      <button class="nk" onclick="numPad(5)">5</button>
+      <button class="nk" onclick="numPad(6)">6</button>
+      <button class="nk" onclick="numPad(7)">7</button>
+      <button class="nk" onclick="numPad(8)">8</button>
+      <button class="nk" onclick="numPad(9)">9</button>
+      <button class="nk del" onclick="clearPin()">✕</button>
+      <button class="nk" onclick="numPad(0)">0</button>
+      <button class="nk del" onclick="backPin()">⌫</button>
+    </div>
+    <button onclick="scr('s0')" style="background:none;border:none;color:var(--tx2);font-size:13px;cursor:pointer;margin-top:16px">← Cambiar usuario</button>
+  </div>
+</div>
+
+<!-- ════ sM: MUESTRISTA ════ -->
+<div id="sM" class="scr">
+  <div class="hdr">
+    <span>🧦</span>
+    <h1 id="m-name">—</h1>
+    <span class="rbM">Muestrista</span>
+    <button onclick="logout()" style="background:none;border:none;color:var(--tx2);font-size:20px;cursor:pointer;padding:4px;margin-left:4px" title="Salir">⟵</button>
+    <button onclick="openChangePinSelf()" style="background:none;border:none;color:var(--tx2);font-size:18px;cursor:pointer;padding:4px" title="Cambiar PIN">⚙️</button>
+  </div>
+  <div class="body">
+    <div id="mt0" class="tp on">
+      <div class="stitle">Mis tareas</div>
+      <div id="tareas-list"><div class="empty"><div class="ico">📋</div><p>Sin tareas asignadas</p></div></div>
+    </div>
+    <div id="mt1" class="tp">
+      <div class="stitle">Capturas activas</div>
+      <div id="activas-list"><div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div></div>
+    </div>
+    <div id="mt2" class="tp">
+      <div class="stitle">Mi historial</div>
+      <div class="g2" style="margin-bottom:12px;gap:8px">
+        <select class="fi" id="mhf" onchange="loadMHist()">
+          <option value="day">Hoy</option><option value="week">Esta semana</option>
+          <option value="month">Este mes</option><option value="year">Este año</option>
+        </select>
+        <div class="card" style="margin:0;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--tx2)">Total</div>
+          <div style="font-size:22px;font-weight:700;color:var(--am)" id="mhc">—</div>
+        </div>
+      </div>
+      <div id="mhl"></div>
+    </div>
+  </div>
+  <nav class="bnav">
+    <button class="nb on" onclick="mTab(0,this)"><span class="ico">📋</span>Tareas</button>
+    <button class="nb" onclick="mTab(1,this)"><span class="ico">⏱</span>Activas</button>
+    <button class="nb" onclick="mTab(2,this)"><span class="ico">📊</span>Historial</button>
+  </nav>
+</div>
+
+<!-- ════ sL: LETY ════ -->
+<div id="sL" class="scr">
+  <div class="hdr">
+    <span>🧦</span>
+    <h1>Lety — Administración</h1>
+    <span class="rbA">Admin</span>
+    <button onclick="logout()" style="background:none;border:none;color:var(--tx2);font-size:20px;cursor:pointer;padding:4px;margin-left:4px">⟵</button>
+  </div>
+  <div class="body">
+    <!-- ASIGNAR -->
+    <div id="lt0" class="tp on">
+      <div class="stitle">Nuevo desarrollo</div>
+      <div class="mode-sel">
+        <button class="ms-btn on" id="ms-single" onclick="setMode('single')">📌 Código único</button>
+        <button class="ms-btn" id="ms-pack" onclick="setMode('pack')">📦 Pack con variantes</button>
+      </div>
+      <div class="fsec">
+        <div class="ftitle">Datos del pedido</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">OT</label><input class="fi" id="l-ot" placeholder="7735"></div>
+          <div class="fg"><label class="fl">PO</label><input class="fi" id="l-po" placeholder="2422"></div>
+        </div>
+        <div class="fg"><label class="fl">Código Quini</label><input class="fi" id="l-cq" placeholder="2803"></div>
+        <div class="fg"><label class="fl">Modelo</label><input class="fi" id="l-mod" placeholder="RBMCP101"></div>
+        <div class="fg"><label class="fl">Cliente</label><input class="fi" id="l-cli" placeholder="Martí / Reebok"></div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Género</label>
+            <select class="fi" id="l-gen"><option>Caballero</option><option>Dama</option><option>Niño</option><option>Niña</option><option>Unitalla</option></select>
+          </div>
+          <div class="fg"><label class="fl">Talla</label><input class="fi" id="l-tal" placeholder="Unitalla"></div>
+        </div>
+        <div class="fg"><label class="fl">Tipo de producto</label><input class="fi" id="l-tprod" placeholder="6 Pack Mid Crew Básico Liso"></div>
+        <div class="fg">
+          <label class="fl">Complejidad (solo visible para ti)</label>
+          <select class="fi" id="l-comp">
+            <option value="A">A — Tin básico / liso · 1.0 pts</option>
+            <option value="B">B — Con diseño · 2.0 pts</option>
+            <option value="C">C — Jacquard / alta complejidad · 3.5 pts</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label class="fl">Asignar a</label>
+          <select class="fi" id="l-asig"><option value="israel">Israel</option><option value="jesus">Jesús</option></select>
+        </div>
+        <div class="fg"><label class="fl">Notas para el muestrista</label><textarea class="fi" id="l-notas" rows="2" placeholder="Instrucciones especiales..."></textarea></div>
+      </div>
+      <!-- SINGLE MODE -->
+      <div id="form-single" class="fsec">
+        <div class="ftitle">Datos del código</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Código variante</label><input class="fi" id="s-cod" placeholder="2798"></div>
+          <div class="fg"><label class="fl">Descripción / color</label><input class="fi" id="s-desc" placeholder="Negro"></div>
+        </div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Pares requeridos</label><input class="fi" type="number" id="s-pares" placeholder="6000"></div>
+          <div class="fg"><label class="fl">Tipo de pack</label><input class="fi" id="s-pack" placeholder="Individual"></div>
+        </div>
+      </div>
+      <!-- PACK MODE -->
+      <div id="form-pack" class="fsec" style="display:none">
+        <div class="ftitle">Variantes del pack</div>
+        <div id="vlist"></div>
+        <div style="background:var(--bg);border-radius:var(--r);padding:10px;border:1px dashed var(--b2);margin-bottom:8px">
+          <div class="g2" style="margin-bottom:8px">
+            <div class="fg" style="margin:0"><label class="fl">Código variante</label><input class="fi" id="vc" placeholder="2798"></div>
+            <div class="fg" style="margin:0"><label class="fl">Descripción</label><input class="fi" id="vd" placeholder="Negro"></div>
+          </div>
+          <div class="g2">
+            <div class="fg" style="margin:0"><label class="fl">Pares requeridos</label><input class="fi" type="number" id="vp" placeholder="6000"></div>
+            <div class="fg" style="margin:0"><label class="fl">Tipo de pack</label><input class="fi" id="vpk" placeholder="6 Pack"></div>
+          </div>
+          <button class="btn btn-bl btn-sm" style="width:100%;margin-top:8px" onclick="addVar()">+ Agregar variante</button>
+        </div>
+      </div>
+      <div class="al alw"><span>⚠️</span><span style="font-size:12px">La complejidad <strong>NO</strong> es visible para los muestristas.</span></div>
+      <button class="btn btn-am" onclick="asignar()">✓ Asignar desarrollo</button>
+    </div>
+    <!-- REVISAR -->
+    <div id="lt1" class="tp">
+      <div class="stitle">Pendientes de revisión</div>
+      <div id="pend-list"><div class="empty"><div class="ico">✅</div><p>Sin fichas pendientes</p></div></div>
+      <div class="stitle" style="margin-top:16px">En proceso</div>
+      <div id="proc-list"><div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div></div>
+    </div>
+    <!-- DASHBOARD -->
+    <div id="lt2" class="tp">
+      <div class="stitle">Dashboard</div>
+      <div class="g2" style="gap:8px;margin-bottom:12px">
+        <select class="fi" id="dp" onchange="loadDB()"><option value="day">Hoy</option><option value="week">Semana</option><option value="month" selected>Mes</option><option value="year">Año</option></select>
+        <select class="fi" id="dw" onchange="loadDB()"><option value="all">Todos</option><option value="israel">Israel</option><option value="jesus">Jesús</option></select>
+      </div>
+      <div class="g2" style="gap:8px;margin-bottom:12px">
+        <div class="card am" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">Completadas</div><div style="font-size:24px;font-weight:700;color:var(--am)" id="db0">—</div></div>
+        <div class="card gn" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TEN promedio</div><div style="font-size:24px;font-weight:700;color:var(--gn)" id="db1">—</div></div>
+        <div class="card bl" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">IPP 1ª pasada</div><div style="font-size:24px;font-weight:700;color:var(--bl)" id="db2">—</div></div>
+        <div class="card" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TM total (min)</div><div style="font-size:24px;font-weight:700" id="db3">—</div></div>
+      </div>
+      <div class="stitle">Historial</div>
+      <div id="db-list"></div>
+    </div>
+    <!-- CONFIG -->
+    <div id="lt3" class="tp">
+      <div class="stitle">PINs de acceso</div>
+      <div class="card" style="margin-bottom:8px">
+        <div style="font-size:12px;color:var(--tx2);margin-bottom:12px">Cambia el PIN de cualquier usuario. Se te pedirá tu PIN de admin para confirmar.</div>
+        <div class="pin-row">
+          <div><span style="font-size:16px">👩‍💼</span> <strong>Lety</strong></div>
+          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('lety')">🔑 Cambiar PIN</button>
+        </div>
+        <div class="pin-row">
+          <div><span style="font-size:16px">👨‍🔧</span> <strong>Israel</strong></div>
+          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('israel')">🔑 Cambiar PIN</button>
+        </div>
+        <div class="pin-row" style="margin-bottom:0">
+          <div><span style="font-size:16px">👨‍🔧</span> <strong>Jesús</strong></div>
+          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('jesus')">🔑 Cambiar PIN</button>
+        </div>
+      </div>
+      <div class="al ali"><span>ℹ️</span><span style="font-size:12px">PINs por defecto: Lety=<strong>123456</strong> · Israel=<strong>000001</strong> · Jesús=<strong>000002</strong></span></div>
+    </div>
+  </div>
+  <nav class="bnav">
+    <button class="nb on" onclick="ltTab(0,this)"><span class="ico">➕</span>Asignar</button>
+    <button class="nb" onclick="ltTab(1,this)"><span class="ico">📝</span>Revisar</button>
+    <button class="nb" onclick="ltTab(2,this)"><span class="ico">📊</span>Dashboard</button>
+    <button class="nb" onclick="ltTab(3,this)"><span class="ico">⚙️</span>Config</button>
+  </nav>
+</div>
+
+<!-- ════ sC: CAPTURA FORM ════ -->
+<div id="sC" class="scr">
+  <div class="hdr">
+    <button onclick="backCaptura()" style="background:none;border:none;color:var(--tx2);font-size:22px;cursor:pointer;padding:4px;flex-shrink:0">←</button>
+    <h1 id="ct">Ficha práctica</h1>
+    <span id="cc" class="vcod" style="flex-shrink:0"></span>
+  </div>
+  <div class="body" id="cbody"></div>
+</div>
+
+<!-- ════ sF: FIRMA ════ -->
+<div id="sF" class="scr">
+  <div class="hdr">
+    <button onclick="backFirma()" style="background:none;border:none;color:var(--tx2);font-size:22px;cursor:pointer;padding:4px;flex-shrink:0">←</button>
+    <h1 id="ft">Firma digital</h1>
+  </div>
+  <div class="body">
+    <div class="al ali" id="fi-inst"><span>✍️</span><span>Dibuja tu firma para confirmar</span></div>
+    <div class="fsec">
+      <canvas id="sig-cv"></canvas>
+      <button class="btn btn-gh btn-sm" style="margin-top:10px" onclick="clearSig()">🗑 Limpiar</button>
+    </div>
+    <button class="btn btn-am" onclick="saveSig()">✓ Confirmar firma</button>
+    <button class="btn btn-gh" onclick="backFirma()">Cancelar</button>
+  </div>
+</div>
+
+<!-- ════ sR: REVISIÓN LETY ════ -->
+<div id="sR" class="scr">
+  <div class="hdr">
+    <button onclick="backRev()" style="background:none;border:none;color:var(--tx2);font-size:22px;cursor:pointer;padding:4px;flex-shrink:0">←</button>
+    <h1>Revisar ficha práctica</h1>
+  </div>
+  <div class="body" id="rbody"></div>
+</div>
+
+<!-- MODAL: TM -->
+<div class="ovl" id="otm" onclick="if(event.target===this)closeOvl('otm')">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px">⏸ Tiempo muerto</div>
+    <div class="al ali" style="margin-bottom:12px"><span>💡</span><span style="font-size:12px">Las causas <strong>externas</strong> no afectan tus KPIs.</span></div>
+    <div id="tm-btns"></div>
+    <button class="btn btn-gh btn-sm" style="margin-top:4px;width:100%" onclick="closeOvl('otm')">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL: TM ACTIVO -->
+<div class="ovl" id="otma" onclick="if(event.target===this)closeOvl('otma')">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px">⏸ TM activo</div>
+    <div class="al alw" style="margin-bottom:14px"><span>⚠️</span><div><strong id="tma-cause">—</strong><br><span style="font-size:12px">TEN pausado. Presiona "Fin" cuando se resuelva.</span></div></div>
+    <button class="btn btn-gn" onclick="endTMA()">✓ Fin — reanudar trabajo</button>
+    <button class="btn btn-gh" onclick="closeOvl('otma')">Volver</button>
+  </div>
+</div>
+
+<!-- MODAL: CHANGE PIN -->
+<div class="ovl" id="ocp" onclick="if(event.target===this)closeOvl('ocp')">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px">🔑 Cambiar PIN</div>
+    <div style="font-size:13px;color:var(--tx2);margin-bottom:14px" id="cp-who-label">—</div>
+    <div class="fg"><label class="fl">Nuevo PIN (6 dígitos)</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-new" placeholder="••••••"></div>
+    <div class="fg"><label class="fl">Confirmar nuevo PIN</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-confirm" placeholder="••••••"></div>
+    <div class="fg" id="cp-admin-wrap"><label class="fl">Tu PIN de admin para confirmar</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-admin" placeholder="••••••"></div>
+    <button class="btn btn-am" onclick="savePin()">✓ Guardar PIN</button>
+    <button class="btn btn-gh" onclick="closeOvl('ocp')">Cancelar</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+// FIREBASE
+// ══════════════════════════════════════════
+const FB_CFG = {
+  apiKey:"AIzaSyCm8Ks6Lpds4LoIn3VZkZjh62VVRsXeHdI",
+  authDomain:"quini-muestristas.firebaseapp.com",
+  projectId:"quini-muestristas",
+  storageBucket:"quini-muestristas.firebasestorage.app",
+  messagingSenderId:"912659108385",
+  appId:"1:912659108385:web:0be9664baec23499910960"
+};
+let db = null;
+function initFB() {
+  try {
+    if (typeof firebase === 'undefined') throw new Error('SDK no cargó');
+    if (!firebase.apps.length) firebase.initializeApp(FB_CFG);
+    db = firebase.firestore();
+    fbSt('🟢 Firebase conectado', 'var(--gn)');
+  } catch(e) {
+    fbSt('🔴 Sin Firebase — verifica conexión', 'var(--rd)');
+    console.error('Firebase:', e);
+  }
+}
+function fbSt(msg, col) { const el=document.getElementById('fb-st'); if(el){el.textContent=msg;el.style.color=col;} }
+
+// ══════════════════════════════════════════
+// CONSTANTS & STATE
+// ══════════════════════════════════════════
+const USERS = {
+  lety:   {nombre:'Lety',   rol:'lety',       ico:'👩‍💼'},
+  israel: {nombre:'Israel', rol:'muestrista',  ico:'👨‍🔧'},
+  jesus:  {nombre:'Jesús',  rol:'muestrista',  ico:'👨‍🔧'},
+};
+const DEF_PINS = {lety:'123456', israel:'000001', jesus:'000002'};
+const TM_CAUSES = [
+  {id:'maquina', label:'⚙️ Espera de máquina (producción)',  ext:true},
+  {id:'color',   label:'🎨 Espera aprobación de color',      ext:true},
+  {id:'material',label:'🧵 Espera de material / hilo',       ext:true},
+  {id:'lety',    label:'👁 Espera revisión Lety / BMP',      ext:true},
+  {id:'cliente', label:'✅ Espera aprobación cliente',       ext:true},
+  {id:'falla',   label:'🔧 Falla / mantenimiento máquina',   ext:true},
+  {id:'descanso',label:'☕ Descanso personal estándar',      ext:false},
+  {id:'personal',label:'🚶 Tiempo personal excesivo',        ext:false},
+];
+let APP = {
+  user:null, pinBuf:[], pinTarget:null,
+  vars:[], asignMode:'single',
+  timers:{}, activeCap:null, sigData:null, revCap:null,
+  tmTarget:null, tmaCapId:null,
+  changePinUid:null, listeners:[],
+  _activasSnap:[],
+};
+
+// ══════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════
+function fmt(s){const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return p(h)+':'+p(m)+':'+p(sec);}
+function p(n){return String(n).padStart(2,'0');}
+function fmtMin(s){return Math.floor(s/60)+'m '+p(s%60)+'s';}
+function fmtDate(ts){if(!ts)return'—';const d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});}
+function es(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function scr(id){document.querySelectorAll('.scr').forEach(s=>s.classList.remove('on'));document.getElementById(id).classList.add('on');}
+function openOvl(id){document.getElementById(id).classList.add('on');}
+function closeOvl(id){document.getElementById(id).classList.remove('on');}
+function toast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.borderColor=ok?'var(--gn)':'var(--rd)';t.style.display='block';setTimeout(()=>t.style.display='none',2800);}
+function gv(id){return document.getElementById(id)?.value||'';}
+function fsOk(){if(!db){toast('Sin conexión a Firebase',false);return false;}return true;}
+function getRange(period){
+  const now=new Date(),start=new Date();
+  if(period==='day')start.setHours(0,0,0,0);
+  else if(period==='week'){start.setDate(now.getDate()-now.getDay());start.setHours(0,0,0,0);}
+  else if(period==='month'){start.setDate(1);start.setHours(0,0,0,0);}
+  else{start.setMonth(0,1);start.setHours(0,0,0,0);}
+  return{start:start.getTime(),end:now.getTime()};
+}
+// Safe onclick handler registry
+window._H={};let _hid=0;
+function h(fn){const id='h'+(_hid++);window._H[id]=fn;return '_H[\''+id+'\']()';}
+
+// ══════════════════════════════════════════
+// PIN SYSTEM
+// ══════════════════════════════════════════
+async function verifyPIN(uid, pin) {
+  if (!db) return pin === DEF_PINS[uid];
+  try {
+    const doc = await db.collection('pines').doc(uid).get();
+    if (!doc.exists) return pin === DEF_PINS[uid];
+    return doc.data().pin === pin;
+  } catch(e) { return pin === DEF_PINS[uid]; }
+}
+function selectUser(uid) {
+  APP.pinTarget = uid;
+  APP.pinBuf = [];
+  const u = USERS[uid];
+  document.getElementById('pin-ico').textContent = u.ico;
+  document.getElementById('pin-name').textContent = u.nombre;
+  document.getElementById('pin-err').textContent = '';
+  updateDots();
+  scr('s1');
+}
+function numPad(n) {
+  if (APP.pinBuf.length >= 6) return;
+  APP.pinBuf.push(n);
+  updateDots();
+  if (APP.pinBuf.length === 6) setTimeout(submitPin, 150);
+}
+function backPin() { APP.pinBuf.pop(); updateDots(); }
+function clearPin() { APP.pinBuf = []; updateDots(); }
+function updateDots() {
+  for (let i=0;i<6;i++) {
+    const d = document.getElementById('pd'+i);
+    if (d) d.classList.toggle('on', i < APP.pinBuf.length);
+  }
+}
+async function submitPin() {
+  const pin = APP.pinBuf.join('');
+  const ok = await verifyPIN(APP.pinTarget, pin);
+  if (ok) {
+    login(APP.pinTarget);
+  } else {
+    document.getElementById('pin-err').textContent = 'PIN incorrecto, intenta de nuevo';
+    const wrap = document.getElementById('pin-dots-wrap');
+    wrap.classList.add('shake');
+    setTimeout(() => wrap.classList.remove('shake'), 400);
+    APP.pinBuf = []; updateDots();
+  }
+}
+// Change PIN (from Lety config)
+function openChangePin(uid) {
+  APP.changePinUid = uid;
+  const u = USERS[uid];
+  document.getElementById('cp-who-label').textContent = 'Cambiando PIN de: '+u.ico+' '+u.nombre;
+  document.getElementById('cp-new').value = '';
+  document.getElementById('cp-confirm').value = '';
+  document.getElementById('cp-admin').value = '';
+  // Show admin confirm only if not changing own PIN from muestrista
+  document.getElementById('cp-admin-wrap').style.display = '';
+  openOvl('ocp');
+}
+function openChangePinSelf() {
+  APP.changePinUid = APP.user.id;
+  const u = USERS[APP.user.id];
+  document.getElementById('cp-who-label').textContent = 'Cambiando tu PIN: '+u.ico+' '+u.nombre;
+  document.getElementById('cp-new').value = '';
+  document.getElementById('cp-confirm').value = '';
+  document.getElementById('cp-admin').value = '';
+  document.getElementById('cp-admin-wrap').style.display = '';
+  openOvl('ocp');
+}
+async function savePin() {
+  const newPin = gv('cp-new').trim();
+  const confirm = gv('cp-confirm').trim();
+  const adminPin = gv('cp-admin').trim();
+  if (newPin.length !== 6 || !/^\d{6}$/.test(newPin)) { toast('El PIN debe ser de 6 dígitos numéricos', false); return; }
+  if (newPin !== confirm) { toast('Los PINs no coinciden', false); return; }
+  // Verify admin PIN (always Lety's PIN)
+  const adminOk = await verifyPIN('lety', adminPin);
+  if (!adminOk) { toast('PIN de admin incorrecto', false); return; }
+  if (!fsOk()) return;
+  try {
+    await db.collection('pines').doc(APP.changePinUid).set({ pin: newPin });
+    toast('✅ PIN actualizado correctamente');
+    closeOvl('ocp');
+  } catch(e) { console.error(e); toast('Error guardando PIN', false); }
+}
+
+// ══════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════
+function login(uid) {
+  APP.user = {id:uid, ...USERS[uid]};
+  if (uid === 'lety') { initLety(); scr('sL'); }
+  else { initMuestrista(); scr('sM'); }
+}
+function logout() {
+  Object.keys(APP.timers).forEach(id => pauseT(id, true));
+  APP.listeners.forEach(u => { try{u();}catch(e){} });
+  APP.listeners = []; APP.user = null; APP.timers = {}; APP.vars = [];
+  APP._activasSnap = [];
+  scr('s0');
+}
+
+// ══════════════════════════════════════════
+// TIMERS
+// ══════════════════════════════════════════
+function getT(id) {
+  if (!APP.timers[id]) APP.timers[id]={running:false,elapsed:0,tm:0,tmActive:false,cause:null,iid:null};
+  return APP.timers[id];
+}
+function startT(id) {
+  const t=getT(id);
+  if (t.running) return;
+  t.running=true;
+  if (t.iid) clearInterval(t.iid);
+  t.iid=setInterval(()=>{
+    if(!t.running)return;
+    t.elapsed++;
+    if(t.tmActive)t.tm++;
+    saveTimerLS(id);
+  },1000);
+  renderActivas();
+}
+function pauseT(id,sync=false) {
+  const t=APP.timers[id]; if(!t)return;
+  t.running=false;
+  if(t.iid){clearInterval(t.iid);t.iid=null;}
+  if(sync&&db) db.collection('capturas').doc(id).update({elapsed_seg:t.elapsed,tm_seg:t.tm}).catch(()=>{});
+  renderActivas();
+}
+function ten(id){const t=APP.timers[id];if(!t)return 0;return Math.max(0,t.elapsed-t.tm);}
+function saveTimerLS(id){
+  const t=APP.timers[id];if(!t)return;
+  try{const a=JSON.parse(localStorage.getItem('qu_t')||'{}');a[id]={elapsed:t.elapsed,tm:t.tm};localStorage.setItem('qu_t',JSON.stringify(a));}catch(e){}
+}
+function restoreTimers(){
+  try{const a=JSON.parse(localStorage.getItem('qu_t')||'{}');Object.entries(a).forEach(([id,v])=>{if(!APP.timers[id])APP.timers[id]={running:false,elapsed:v.elapsed||0,tm:v.tm||0,tmActive:false,cause:null,iid:null};});}catch(e){}
+}
+// TM
+function openTMFor(capturaId) {
+  APP.tmTarget=capturaId;
+  document.getElementById('tm-btns').innerHTML=TM_CAUSES.map(c=>`
+    <button class="btn btn-gh btn-sm" style="margin-bottom:8px;width:100%;justify-content:space-between;text-align:left" onclick="${h(()=>startTMCause(capturaId,c.id))}">
+      <span>${es(c.label)}</span>
+      <span class="bge ${c.ext?'bok':'bpend'}" style="margin-left:8px;flex-shrink:0">${c.ext?'externo':'interno'}</span>
+    </button>`).join('');
+  openOvl('otm');
+}
+function startTMCause(capturaId,causeId) {
+  const t=getT(capturaId);
+  t.tmActive=true;t.cause=causeId;
+  closeOvl('otm');
+  if(!t.running)startT(capturaId);
+  const cause=TM_CAUSES.find(c=>c.id===causeId);
+  document.getElementById('tma-cause').textContent=cause?cause.label:causeId;
+  APP.tmaCapId=capturaId;
+  openOvl('otma');
+}
+function endTMA(){
+  const id=APP.tmaCapId;
+  const t=APP.timers[id];if(t){t.tmActive=false;t.cause=null;}
+  closeOvl('otma');
+  renderActivas();
+}
+// Global tick
+setInterval(()=>{
+  if(document.getElementById('mt1')?.classList.contains('on'))renderActivas();
+  if(document.getElementById('sC')?.classList.contains('on')&&APP.activeCap){
+    const t=APP.timers[APP.activeCap];if(!t)return;
+    const d1=document.getElementById('cap-bruto');if(d1)d1.textContent=fmt(t.elapsed);
+    const d2=document.getElementById('cap-ten');if(d2)d2.textContent=fmt(ten(APP.activeCap));
+    const d3=document.getElementById('cap-tm');if(d3)d3.textContent=fmt(t.tm);
+    const td=document.getElementById('cap-timer');if(td)td.className='timer '+(t.running?'tgn':'tam');
+  }
+},1000);
+
+// ══════════════════════════════════════════
+// MUESTRISTA
+// ══════════════════════════════════════════
+function mTab(i,btn){
+  [0,1,2].forEach(j=>document.getElementById('mt'+j).classList.remove('on'));
+  document.getElementById('mt'+i).classList.add('on');
+  document.querySelectorAll('#sM .nb').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  if(i===2)loadMHist();
+  if(i===1)renderActivas();
+}
+function initMuestrista(){
+  document.getElementById('m-name').textContent=APP.user.nombre;
+  restoreTimers();
+  if(!fsOk())return;
+  APP.listeners.forEach(u=>{try{u();}catch(e){}});APP.listeners=[];
+  // Listen tasks - single where to avoid composite index
+  APP.listeners[0]=db.collection('desarrollos')
+    .where('asignado_a','==',APP.user.id)
+    .onSnapshot(snap=>{
+      const docs=snap.docs.filter(d=>['pendiente','en_proceso'].includes(d.data().estado));
+      const el=document.getElementById('tareas-list');if(!el)return;
+      if(docs.length===0){el.innerHTML='<div class="empty"><div class="ico">📋</div><p>Sin tareas asignadas</p></div>';return;}
+      el.innerHTML=docs.map(d=>renderTarea(d.id,d.data())).join('');
+    },e=>console.error(e));
+  // Listen active captures - single where
+  APP.listeners[1]=db.collection('capturas')
+    .where('id_muestrista','==',APP.user.id)
+    .onSnapshot(snap=>{
+      const docs=snap.docs.filter(d=>['activo','pausado'].includes(d.data().estado));
+      docs.forEach(d=>{const dt=d.data();if(!APP.timers[d.id])APP.timers[d.id]={running:false,elapsed:dt.elapsed_seg||0,tm:dt.tm_seg||0,tmActive:false,cause:null,iid:null};});
+      APP._activasSnap=docs;
+      renderActivas(docs);
+    },e=>console.error(e));
+}
+function renderTarea(devId,d){
+  const vars=d.variantes||[];
+  return `<div class="card">
+    <div class="dt">${es(d.modelo)} <span style="font-size:12px;color:var(--tx2)">· ${es(d.cliente)}</span></div>
+    <div class="ds">${es(d.tipo_producto||'')} · ${es(d.genero)} ${es(d.talla)}</div>
+    <div style="font-size:11px;color:var(--tx2);margin:4px 0">OT ${es(d.ot)} · PO ${es(d.po)}</div>
+    ${d.notas?`<div class="al ali" style="margin:8px 0"><span>📌</span><span style="font-size:12px">${es(d.notas)}</span></div>`:''}
+    <div class="stitle" style="margin-top:10px">Variantes</div>
+    ${vars.map(v=>`<div class="vi">
+      <div style="flex:1"><div class="vcod">${es(v.codigo)}</div><div style="font-size:12px;color:var(--tx2)">${es(v.descripcion)} · ${es(v.pares_requeridos)} pares · ${es(v.tipo_pack)}</div></div>
+      <button class="btn btn-am btn-sm" style="width:auto;padding:8px 14px" onclick="${h(()=>startCap(devId,v.codigo))}">▶ Iniciar</button>
+    </div>`).join('')}
+  </div>`;
+}
+function renderActivas(docs){
+  const d=docs||APP._activasSnap||[];
+  const el=document.getElementById('activas-list');if(!el)return;
+  if(d.length===0){el.innerHTML='<div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div>';return;}
+  el.innerHTML=d.map(doc=>{
+    const dt=doc.data(),id=doc.id,t=APP.timers[id]||{elapsed:0,tm:0,running:false};
+    const tn=ten(id);
+    return `<div class="card ${t.running?'am':''}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span class="vcod">${es(dt.codigo_variante)}</span>
+        <span style="font-size:13px;font-weight:600;flex:1">${es(dt.modelo)}</span>
+        <span style="font-size:11px;color:var(--tx2)">${es(dt.descripcion_variante)}</span>
+      </div>
+      <div class="timer ${t.running?'tgn':'tam'}" style="font-size:30px">${fmt(t.elapsed)}</div>
+      <div class="trow"><span>TEN: <strong style="color:var(--gn)">${fmt(tn)}</strong></span><span style="color:var(--rd)">TM: ${fmt(t.tm)}</span></div>
+      <div class="brow" style="margin-top:10px">
+        <button class="btn btn-am btn-sm" style="flex:2" onclick="${h(()=>openCap(id))}">📝 Abrir ficha</button>
+        <button class="btn btn-rd btn-sm" style="flex:1" onclick="${h(()=>openTMFor(id))}">⏸ TM</button>
+        <button class="btn btn-gh btn-sm" style="flex:1" onclick="${h(()=>t.running?pauseT(id,true):startT(id))}">${t.running?'⏸':'▶'}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════
+// START / OPEN CAPTURE
+// ══════════════════════════════════════════
+async function startCap(devId,cod){
+  if(!fsOk())return;
+  try{
+    const ex=await db.collection('capturas')
+      .where('id_desarrollo','==',devId)
+      .where('codigo_variante','==',cod)
+      .get();
+    const exActive=ex.docs.find(d=>['activo','pausado'].includes(d.data().estado));
+    let capId;
+    if(exActive){capId=exActive.id;toast('Captura existente cargada');}
+    else{
+      const dev=await db.collection('desarrollos').doc(devId).get();
+      const dd=dev.data();
+      const v=(dd.variantes||[]).find(x=>x.codigo===cod)||{};
+      const ref=await db.collection('capturas').add({
+        id_desarrollo:devId,id_muestrista:APP.user.id,
+        codigo_variante:cod,descripcion_variante:v.descripcion||'',
+        pares_requeridos:v.pares_requeridos||'',tipo_pack:v.tipo_pack||'',
+        modelo:dd.modelo,cliente:dd.cliente,ot:dd.ot,po:dd.po,tipo_producto:dd.tipo_producto||'',
+        estado:'activo',elapsed_seg:0,tm_seg:0,
+        dt_inicio:firebase.firestore.FieldValue.serverTimestamp(),
+        maquina_marca:'',maquina_numero:'',
+        med_sh:{A:'',B:'',C:'',D:'',E:''},med_h:{A:'',B:'',C:'',D:'',E:''},
+        t_ciclo_min:'',t_ciclo_seg:'',peso_sal:'',peso_cer:'',
+        giros:{el:'',tb:'',pl:'',rb:''},vels:{el:'',tb:'',tp:'',pl:''},
+        pto:{d1:'',d2:'',sk:''},pares:'',obs:'',
+        firma_m:null,firma_l:null,iter:1,
+      });
+      capId=ref.id;
+      await db.collection('desarrollos').doc(devId).update({estado:'en_proceso'});
+    }
+    if(!APP.timers[capId])getT(capId);
+    startT(capId);
+    await openCap(capId);
+  }catch(e){console.error(e);toast('Error iniciando captura',false);}
+}
+async function openCap(capturaId){
+  if(!fsOk())return;
+  APP.activeCap=capturaId;
+  try{
+    const snap=await db.collection('capturas').doc(capturaId).get();
+    const d=snap.data();
+    const t=APP.timers[capturaId]||{elapsed:0,tm:0,running:false};
+    document.getElementById('ct').textContent=es(d.modelo)+' · '+es(d.descripcion_variante);
+    document.getElementById('cc').textContent=es(d.codigo_variante);
+    const sh=d.med_sh||{},mh=d.med_h||{},gi=d.giros||{},vl=d.vels||{},pt=d.pto||{};
+    document.getElementById('cbody').innerHTML=`
+      <div class="card ${t.running?'am':''}">
+        <div class="ds" style="margin-bottom:6px">OT ${es(d.ot)} · ${es(d.cliente)}</div>
+        <div class="timer ${t.running?'tgn':'tam'}" id="cap-timer">${fmt(t.elapsed)}</div>
+        <div class="trow" style="margin-bottom:10px">
+          <span>TEN: <strong id="cap-ten" style="color:var(--gn)">${fmt(ten(capturaId))}</strong></span>
+          <span id="cap-bruto" style="font-family:JetBrains Mono,monospace;font-size:11px">${fmt(t.elapsed)}</span>
+          <span style="color:var(--rd)">TM: <span id="cap-tm">${fmt(t.tm)}</span></span>
+        </div>
+        <div class="brow">
+          <button class="btn btn-gn btn-sm" id="btn-tog" style="flex:2" onclick="togCapTimer()">${t.running?'⏸ Pausar':'▶ Reanudar'}</button>
+          <button class="btn btn-rd btn-sm" style="flex:1" onclick="openTMFor('${capturaId}')">⏸ TM</button>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Máquina</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Marca</label><input class="fi" id="f-mm" value="${es(d.maquina_marca)}" placeholder="Zhenxing"></div>
+          <div class="fg"><label class="fl">Número</label><input class="fi" id="f-mn" value="${es(d.maquina_numero)}" placeholder="71"></div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Medidas de salida (cm)</div>
+        <table class="mt">
+          <tr><th>Medida</th><th>Sin Hormar</th><th>Hormado</th></tr>
+          ${['A — Alto tubo','B — Planta','C — Ancho planta','D — Ancho elástico','E — Alto elástico'].map((lbl,i)=>{
+            const k=String.fromCharCode(65+i);
+            return `<tr><td class="lbl">${lbl}</td><td><input id="sh${k}" value="${es(sh[k]||'')}" placeholder="0.0"></td><td><input id="mh${k}" value="${es(mh[k]||'')}" placeholder="0.0"></td></tr>`;
+          }).join('')}
+        </table>
+      </div>
+      <div class="fsec"><div class="ftitle">Tiempos y pesos</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">T. ciclo — min</label><input class="fi" type="number" id="f-cm" value="${es(d.t_ciclo_min)}" placeholder="1"></div>
+          <div class="fg"><label class="fl">T. ciclo — seg</label><input class="fi" type="number" id="f-cs" value="${es(d.t_ciclo_seg)}" placeholder="54"></div>
+          <div class="fg"><label class="fl">Peso salida (g)</label><input class="fi" type="number" id="f-ps" value="${es(d.peso_sal)}" placeholder="20.78"></div>
+          <div class="fg"><label class="fl">Peso cerrado (g)</label><input class="fi" type="number" id="f-pc" value="${es(d.peso_cer)}" placeholder="17.5"></div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Giros de cadena</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Elástico</label><input class="fi" type="number" id="g-el" value="${es(gi.el)}" placeholder="20"></div>
+          <div class="fg"><label class="fl">Tubo</label><input class="fi" type="number" id="g-tb" value="${es(gi.tb)}" placeholder="10"></div>
+          <div class="fg"><label class="fl">Planta</label><input class="fi" type="number" id="g-pl" value="${es(gi.pl)}" placeholder="165"></div>
+          <div class="fg"><label class="fl">Rubber</label><input class="fi" type="number" id="g-rb" value="${es(gi.rb)}" placeholder="10"></div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Velocidades de cadena</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Elástico</label><input class="fi" type="number" id="v-el" value="${es(vl.el)}" placeholder="230"></div>
+          <div class="fg"><label class="fl">Tubo</label><input class="fi" type="number" id="v-tb" value="${es(vl.tb)}" placeholder="260"></div>
+          <div class="fg"><label class="fl">Talón y punta</label><input class="fi" type="number" id="v-tp" value="${es(vl.tp)}" placeholder="200"></div>
+          <div class="fg"><label class="fl">Planta</label><input class="fi" type="number" id="v-pl" value="${es(vl.pl)}" placeholder="260"></div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Punto de máquina</div>
+        <div class="g3">
+          <div class="fg"><label class="fl">DEN-1</label><input class="fi" type="number" id="p-d1" value="${es(pt.d1)}" placeholder="1"></div>
+          <div class="fg"><label class="fl">DEN-2</label><input class="fi" type="number" id="p-d2" value="${es(pt.d2)}" placeholder="0"></div>
+          <div class="fg"><label class="fl">SINK2</label><input class="fi" type="number" id="p-sk" value="${es(pt.sk)}" placeholder="0"></div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Producción — variante ${es(d.codigo_variante)}</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Pares producidos</label><input class="fi" type="number" id="f-pr" value="${es(d.pares)}" placeholder="${es(d.pares_requeridos)} req."></div>
+          <div class="fg"><label class="fl">Tipo de pack</label><input class="fi" id="f-pk" value="${es(d.tipo_pack)}" placeholder="6 Pack"></div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Observaciones</div>
+        <textarea class="fi" id="f-ob" rows="3" placeholder="Ajustes, incidencias...">${es(d.obs)}</textarea>
+      </div>
+      <button class="btn btn-am" onclick="saveAndSign()">✓ Guardar y firmar</button>
+      <button class="btn btn-gh" onclick="saveDraft()">💾 Guardar borrador</button>
+    `;
+    scr('sC');
+  }catch(e){console.error(e);toast('Error cargando captura',false);}
+}
+function togCapTimer(){
+  const id=APP.activeCap,t=APP.timers[id];if(!t)return;
+  if(t.running)pauseT(id,true);else startT(id);
+  const btn=document.getElementById('btn-tog');
+  if(btn)btn.textContent=t.running?'⏸ Pausar':'▶ Reanudar';
+}
+function backCaptura(){
+  if(APP.activeCap&&APP.timers[APP.activeCap])pauseT(APP.activeCap,true);
+  scr(APP.user.rol==='lety'?'sL':'sM');
+}
+async function saveCapData(){
+  const id=APP.activeCap,t=APP.timers[id]||{elapsed:0,tm:0};
+  const sh={},mh={};
+  ['A','B','C','D','E'].forEach(k=>{sh[k]=gv('sh'+k);mh[k]=gv('mh'+k);});
+  await db.collection('capturas').doc(id).update({
+    maquina_marca:gv('f-mm'),maquina_numero:gv('f-mn'),
+    med_sh:sh,med_h:mh,
+    t_ciclo_min:gv('f-cm'),t_ciclo_seg:gv('f-cs'),
+    peso_sal:gv('f-ps'),peso_cer:gv('f-pc'),
+    giros:{el:gv('g-el'),tb:gv('g-tb'),pl:gv('g-pl'),rb:gv('g-rb')},
+    vels:{el:gv('v-el'),tb:gv('v-tb'),tp:gv('v-tp'),pl:gv('v-pl')},
+    pto:{d1:gv('p-d1'),d2:gv('p-d2'),sk:gv('p-sk')},
+    pares:gv('f-pr'),obs:gv('f-ob'),
+    tipo_pack:gv('f-pk'),
+    elapsed_seg:t.elapsed,tm_seg:t.tm,
+  });
+}
+async function saveDraft(){if(!fsOk())return;try{await saveCapData();toast('Borrador guardado');}catch(e){toast('Error guardando',false);}}
+async function saveAndSign(){
+  if(!fsOk())return;
+  try{
+    await saveCapData();
+    pauseT(APP.activeCap,false);
+    APP.sigData={capturaId:APP.activeCap,who:'muestrista'};
+    document.getElementById('ft').textContent='Firma del muestrista';
+    document.getElementById('fi-inst').innerHTML='<span>✍️</span><span>Firma para confirmar que los datos son correctos.</span>';
+    showFirma();
+  }catch(e){console.error(e);toast('Error',false);}
+}
+
+// ══════════════════════════════════════════
+// SIGNATURE
+// ══════════════════════════════════════════
+let sigDrw=false,sigCtxObj=null;
+function showFirma(){scr('sF');setTimeout(initSig,80);}
+function initSig(){
+  const cv=document.getElementById('sig-cv');if(!cv)return;
+  const br=cv.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  cv.width=Math.round(br.width*dpr)||320;
+  cv.height=Math.round(200*dpr)||200;
+  cv.style.height='200px';
+  sigCtxObj=cv.getContext('2d');
+  sigCtxObj.strokeStyle='#F5A623';
+  sigCtxObj.lineWidth=3*dpr;
+  sigCtxObj.lineCap='round';
+  sigCtxObj.lineJoin='round';
+  sigCtxObj.clearRect(0,0,cv.width,cv.height);
+  function xy(e){const r=cv.getBoundingClientRect(),s=e.touches?e.touches[0]:e,sx=cv.width/r.width,sy=cv.height/r.height;return{x:(s.clientX-r.left)*sx,y:(s.clientY-r.top)*sy};}
+  cv.onmousedown=e=>{sigDrw=true;const p=xy(e);sigCtxObj.beginPath();sigCtxObj.moveTo(p.x,p.y);};
+  cv.onmousemove=e=>{if(!sigDrw)return;const p=xy(e);sigCtxObj.lineTo(p.x,p.y);sigCtxObj.stroke();};
+  cv.onmouseup=()=>sigDrw=false;
+  cv.addEventListener('touchstart',e=>{e.preventDefault();sigDrw=true;const p=xy(e);sigCtxObj.beginPath();sigCtxObj.moveTo(p.x,p.y);},{passive:false});
+  cv.addEventListener('touchmove',e=>{e.preventDefault();if(!sigDrw)return;const p=xy(e);sigCtxObj.lineTo(p.x,p.y);sigCtxObj.stroke();},{passive:false});
+  cv.addEventListener('touchend',e=>{e.preventDefault();sigDrw=false;},{passive:false});
+}
+function clearSig(){const cv=document.getElementById('sig-cv');if(cv&&sigCtxObj)sigCtxObj.clearRect(0,0,cv.width,cv.height);}
+async function saveSig(){
+  if(!fsOk())return;
+  const cv=document.getElementById('sig-cv');
+  const px=cv.getContext('2d').getImageData(0,0,cv.width,cv.height).data;
+  if(!px.some(v=>v!==0)){toast('Dibuja tu firma primero',false);return;}
+  const url=cv.toDataURL('image/png');
+  const{capturaId,who}=APP.sigData;
+  try{
+    if(who==='muestrista'){
+      await db.collection('capturas').doc(capturaId).update({
+        firma_m:url,estado:'pendiente_lety',
+        dt_fin:firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      pauseT(capturaId,false);
+      try{const a=JSON.parse(localStorage.getItem('qu_t')||'{}');delete a[capturaId];localStorage.setItem('qu_t',JSON.stringify(a));}catch(e){}
+      delete APP.timers[capturaId];
+      APP._activasSnap=APP._activasSnap.filter(d=>d.id!==capturaId);
+      toast('✅ Ficha firmada — pendiente de Lety');
+      scr('sM');
+    }else{
+      await db.collection('capturas').doc(capturaId).update({firma_l:url,estado:'aprobado'});
+      toast('✅ Ficha aprobada');
+      scr('sL');loadRev();
+    }
+  }catch(e){console.error(e);toast('Error guardando firma',false);}
+}
+function backFirma(){scr(APP.user.rol==='lety'?'sL':'sM');}
+
+// ══════════════════════════════════════════
+// LETY
+// ══════════════════════════════════════════
+function ltTab(i,btn){
+  [0,1,2,3].forEach(j=>document.getElementById('lt'+j).classList.remove('on'));
+  document.getElementById('lt'+i).classList.add('on');
+  document.querySelectorAll('#sL .nb').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  if(i===1)loadRev();
+  if(i===2)loadDB();
+}
+function initLety(){loadRev();}
+// Mode toggle
+function setMode(mode){
+  APP.asignMode=mode;
+  document.getElementById('ms-single').classList.toggle('on',mode==='single');
+  document.getElementById('ms-pack').classList.toggle('on',mode==='pack');
+  document.getElementById('form-single').style.display=mode==='single'?'':'none';
+  document.getElementById('form-pack').style.display=mode==='pack'?'':'none';
+}
+// Variants
+function addVar(){
+  const cod=document.getElementById('vc').value.trim();
+  if(!cod){toast('Ingresa código de variante',false);return;}
+  APP.vars.push({codigo:cod,descripcion:document.getElementById('vd').value.trim(),pares_requeridos:document.getElementById('vp').value.trim(),tipo_pack:document.getElementById('vpk').value.trim()});
+  ['vc','vd','vp','vpk'].forEach(id=>{document.getElementById(id).value='';});
+  renderVars();
+}
+function removeVar(i){APP.vars.splice(i,1);renderVars();}
+function renderVars(){
+  document.getElementById('vlist').innerHTML=APP.vars.map((v,i)=>`
+    <div class="vi">
+      <div style="flex:1"><div class="vcod">${es(v.codigo)}</div><div style="font-size:12px;color:var(--tx2)">${es(v.descripcion)} · ${es(v.pares_requeridos)} pares · ${es(v.tipo_pack)}</div></div>
+      <button onclick="${h(()=>removeVar(i))}" style="background:none;border:none;color:var(--rd);font-size:18px;cursor:pointer;padding:4px">✕</button>
+    </div>`).join('');
+}
+async function asignar(){
+  if(!fsOk())return;
+  const mod=document.getElementById('l-mod').value.trim();
+  if(!mod){toast('Ingresa el modelo',false);return;}
+  let variantes=[];
+  if(APP.asignMode==='single'){
+    const cod=document.getElementById('s-cod').value.trim();
+    if(!cod){toast('Ingresa el código de variante',false);return;}
+    variantes=[{codigo:cod,descripcion:document.getElementById('s-desc').value.trim(),pares_requeridos:document.getElementById('s-pares').value.trim(),tipo_pack:document.getElementById('s-pack').value.trim()}];
+  }else{
+    if(APP.vars.length===0){toast('Agrega al menos una variante',false);return;}
+    variantes=[...APP.vars];
+  }
+  try{
+    await db.collection('desarrollos').add({
+      ot:gv('l-ot'),po:gv('l-po'),codigo_quini:gv('l-cq'),
+      modelo:mod,cliente:gv('l-cli'),
+      genero:document.getElementById('l-gen').value,
+      talla:gv('l-tal'),tipo_producto:gv('l-tprod'),
+      tipo_complejidad:document.getElementById('l-comp').value,
+      asignado_a:document.getElementById('l-asig').value,
+      notas:gv('l-notas'),variantes,
+      estado:'pendiente',fecha_creacion:firebase.firestore.FieldValue.serverTimestamp(),creado_por:'lety',
+    });
+    APP.vars=[];renderVars();
+    ['l-ot','l-po','l-cq','l-mod','l-cli','l-tal','l-tprod','l-notas','s-cod','s-desc','s-pares','s-pack'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    toast('✅ Desarrollo asignado');
+  }catch(e){console.error(e);toast('Error asignando',false);}
+}
+
+// ══════════════════════════════════════════
+// LETY REVISAR
+// ══════════════════════════════════════════
+async function loadRev(){
+  if(!fsOk())return;
+  try{
+    // Single where query - no composite index needed
+    const snap=await db.collection('capturas').where('estado','==','pendiente_lety').get();
+    const el=document.getElementById('pend-list');
+    if(el)el.innerHTML=snap.empty?'<div class="empty"><div class="ico">✅</div><p>Sin fichas pendientes</p></div>':snap.docs.map(d=>renderRevCard(d.id,d.data())).join('');
+    const snap2=await db.collection('capturas').where('estado','in',['activo','pausado']).get();
+    const el2=document.getElementById('proc-list');
+    if(el2)el2.innerHTML=snap2.empty?'<div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div>':snap2.docs.map(d=>{const dt=d.data();return`<div class="card"><div class="dt">${es(dt.modelo)} · <span class="vcod">${es(dt.codigo_variante)}</span></div><div class="ds">${(USERS[dt.id_muestrista]||{}).nombre||dt.id_muestrista} · ${fmtDate(dt.dt_inicio)}</div></div>`;}).join('');
+  }catch(e){console.error(e);}
+}
+function renderRevCard(id,d){
+  return`<div class="card am">
+    <div class="dt">${es(d.modelo)} · <span class="vcod">${es(d.codigo_variante)}</span></div>
+    <div class="ds">${(USERS[d.id_muestrista]||{}).nombre||d.id_muestrista} · ${es(d.descripcion_variante)}</div>
+    <div class="mr"><span>OT ${es(d.ot)}</span><span>${fmtDate(d.dt_fin)}</span></div>
+    <button class="btn btn-am btn-sm" style="margin-top:10px;width:100%" onclick="${h(()=>openRev(id))}">📋 Ver y firmar</button>
+  </div>`;
+}
+async function openRev(capturaId){
+  if(!fsOk())return;
+  APP.revCap=capturaId;
+  try{
+    const snap=await db.collection('capturas').doc(capturaId).get();
+    const d=snap.data();
+    // TEN calculado desde Firestore data (no en-memoria)
+    const tn=Math.max(0,(d.elapsed_seg||0)-(d.tm_seg||0));
+    const sh=d.med_sh||{},mh=d.med_h||{},gi=d.giros||{},vl=d.vels||{},pt=d.pto||{};
+    document.getElementById('rbody').innerHTML=`
+      <div class="card bl">
+        <div class="dt">${es(d.modelo)} · <span class="vcod">${es(d.codigo_variante)}</span></div>
+        <div class="ds">${es(d.descripcion_variante)} · ${es(d.tipo_pack)}</div>
+        <div class="mr"><span>${(USERS[d.id_muestrista]||{}).nombre||d.id_muestrista}</span><span>OT ${es(d.ot)} · PO ${es(d.po)}</span></div>
+        <div class="mr"><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn)}</strong></span><span>TM: <span style="color:var(--rd)">${fmtMin(d.tm_seg||0)}</span></span></div>
+        <div class="mr"><span>Bruto: ${fmtMin(d.elapsed_seg||0)}</span><span>${fmtDate(d.dt_fin)}</span></div>
+      </div>
+      <div class="fsec"><div class="ftitle">Máquina</div>
+        <div class="g2" style="font-size:13px">
+          <div><label class="fl">Marca</label>${es(d.maquina_marca)||'—'}</div>
+          <div><label class="fl">Número</label>${es(d.maquina_numero)||'—'}</div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Medidas</div>
+        <table class="mt">
+          <tr><th>Medida</th><th>Sin Hormar</th><th>Hormado</th></tr>
+          ${['A','B','C','D','E'].map(k=>`<tr><td class="lbl">${k}</td><td>${es(sh[k])||'—'}</td><td>${es(mh[k])||'—'}</td></tr>`).join('')}
+        </table>
+      </div>
+      <div class="fsec"><div class="ftitle">Tiempos y pesos</div>
+        <div class="g2" style="font-size:13px">
+          <div><label class="fl">T. ciclo</label>${es(d.t_ciclo_min)||'—'} min ${es(d.t_ciclo_seg)||'—'} seg</div>
+          <div><label class="fl">Peso salida</label>${es(d.peso_sal)||'—'} g</div>
+          <div><label class="fl">Peso cerrado</label>${es(d.peso_cer)||'—'} g</div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Giros / Velocidades / Punto máquina</div>
+        <div class="g2" style="font-size:13px">
+          <div><label class="fl">Giros elástico</label>${es(gi.el)||'—'}</div>
+          <div><label class="fl">Giros tubo</label>${es(gi.tb)||'—'}</div>
+          <div><label class="fl">Giros planta</label>${es(gi.pl)||'—'}</div>
+          <div><label class="fl">Rubber</label>${es(gi.rb)||'—'}</div>
+          <div><label class="fl">Vel. elástico</label>${es(vl.el)||'—'}</div>
+          <div><label class="fl">Vel. tubo</label>${es(vl.tb)||'—'}</div>
+          <div><label class="fl">DEN-1</label>${es(pt.d1)||'—'}</div>
+          <div><label class="fl">DEN-2 / SINK2</label>${es(pt.d2)||'—'} / ${es(pt.sk)||'—'}</div>
+        </div>
+      </div>
+      <div class="fsec"><div class="ftitle">Producción</div>
+        <div style="font-size:13px"><label class="fl">Pares producidos</label>${es(d.pares)||'—'} de ${es(d.pares_requeridos)||'—'} requeridos</div>
+      </div>
+      ${d.obs?`<div class="fsec"><div class="ftitle">Observaciones</div><div style="font-size:13px">${es(d.obs)}</div></div>`:''}
+      ${d.firma_m?`<div class="fsec"><div class="ftitle">Firma muestrista</div><img src="${d.firma_m}" style="max-width:100%;border-radius:var(--r);border:1px solid var(--b2)"></div>`:''}
+      <div class="brow">
+        <button class="btn btn-gn" style="flex:1" onclick="aprobar()">✓ Aprobar y firmar</button>
+        <button class="btn btn-rd" style="flex:1" onclick="rechazar()">✕ Solicitar corrección</button>
+      </div>`;
+    scr('sR');
+  }catch(e){console.error(e);toast('Error cargando revisión',false);}
+}
+function aprobar(){
+  APP.sigData={capturaId:APP.revCap,who:'lety'};
+  document.getElementById('ft').textContent='Firma de Lety — Aprobar';
+  document.getElementById('fi-inst').innerHTML='<span>✍️</span><span>Firma para aprobar y cerrar la ficha.</span>';
+  showFirma();
+}
+async function rechazar(){
+  if(!fsOk())return;
+  await db.collection('capturas').doc(APP.revCap).update({estado:'correccion',firma_m:null}).catch(()=>{});
+  toast('Corrección solicitada');scr('sL');loadRev();
+}
+function backRev(){scr('sL');loadRev();}
+
+// ══════════════════════════════════════════
+
+// ══════════════════════════════════════════
+// DASHBOARD — client-side date filter (no composite index needed)
+// ══════════════════════════════════════════
+async function loadDB(){
+  if(!fsOk())return;
+  try{
+    const period=document.getElementById('dp')?.value||'month';
+    const who=document.getElementById('dw')?.value||'all';
+    const{start,end}=getRange(period);
+    let q=db.collection('capturas');
+    if(who!=='all')q=q.where('id_muestrista','==',who);
+    const snap=await q.get();
+    const docs=snap.docs.filter(d=>{
+      const dt=d.data();
+      if(!dt.dt_fin)return false;
+      const ms=dt.dt_fin.toMillis?dt.dt_fin.toMillis():0;
+      return ms>=start&&ms<=end&&['aprobado','pendiente_lety','correccion'].includes(dt.estado);
+    });
+    const aprov=docs.filter(d=>d.data().estado==='aprobado').length;
+    const avgTen=docs.length>0?Math.round(docs.reduce((a,d)=>{const dt=d.data();return a+Math.max(0,(dt.elapsed_seg||0)-(dt.tm_seg||0));},0)/docs.length/60):0;
+    const tmTot=docs.reduce((a,d)=>a+(d.data().tm_seg||0),0);
+    document.getElementById('db0').textContent=docs.length;
+    document.getElementById('db1').textContent=avgTen+'m';
+    document.getElementById('db2').textContent=docs.length?Math.round(aprov/docs.length*100)+'%':'—';
+    document.getElementById('db3').textContent=Math.round(tmTot/60);
+    document.getElementById('db-list').innerHTML=docs.length===0
+      ?'<div class="empty"><div class="ico">📭</div><p>Sin capturas en este período</p></div>'
+      :docs.map(d=>{const dt=d.data();const tn2=Math.max(0,(dt.elapsed_seg||0)-(dt.tm_seg||0));
+        return`<div class="card" style="margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="vcod">${es(dt.codigo_variante)}</span>
+            <span style="font-size:13px;font-weight:600;flex:1">${es(dt.modelo)}</span>
+            <span class="bge ${dt.estado==='aprobado'?'bok':'bpend'}">${dt.estado==='aprobado'?'✅':'🔄'} ${es(dt.estado)}</span>
+          </div>
+          <div class="mr"><span>${(USERS[dt.id_muestrista]||{}).nombre||dt.id_muestrista}</span><span>${fmtDate(dt.dt_fin)}</span></div>
+          <div class="mr"><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn2)}</strong></span><span>TM: <span style="color:var(--rd)">${fmtMin(dt.tm_seg||0)}</span></span></div>
+        </div>`;}).join('');
+  }catch(e){console.error('Dashboard error:',e);}
+}
+
+async function loadMHist(){
+  if(!fsOk())return;
+  try{
+    const period=document.getElementById('mhf')?.value||'day';
+    const{start,end}=getRange(period);
+    const snap=await db.collection('capturas').where('id_muestrista','==',APP.user.id).get();
+    const docs=snap.docs.filter(d=>{
+      const dt=d.data();
+      if(!dt.dt_fin)return false;
+      const ms=dt.dt_fin.toMillis?dt.dt_fin.toMillis():0;
+      return ms>=start&&ms<=end;
+    });
+    document.getElementById('mhc').textContent=docs.length;
+    document.getElementById('mhl').innerHTML=docs.length===0
+      ?'<div class="empty"><div class="ico">📭</div><p>Sin capturas en este período</p></div>'
+      :docs.map(d=>{const dt=d.data();const tn2=Math.max(0,(dt.elapsed_seg||0)-(dt.tm_seg||0));
+        return`<div class="card" style="margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="vcod">${es(dt.codigo_variante)}</span>
+            <span style="font-size:13px;font-weight:600;flex:1">${es(dt.modelo)}</span>
+            <span class="bge ${dt.estado==='aprobado'?'bok':'bpend'}">${dt.estado==='aprobado'?'✅':'🔄'}</span>
+          </div>
+          <div class="mr"><span>${fmtDate(dt.dt_fin)}</span><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn2)}</strong></span></div>
+        </div>`;}).join('');
+  }catch(e){console.error('Historial error:',e);}
+}
+
+// ══════════════════════════════════════════
+// INIT — con retry robusto para Firebase SDK
+// ══════════════════════════════════════════
+function tryInitFB(attempt){
+  if(typeof firebase!=='undefined'&&typeof firebase.initializeApp!=='undefined'){
+    initFB();
+  } else if(attempt<30){
+    fbSt('⏳ Cargando Firebase SDK… ('+(attempt+1)+'/30)','var(--am)');
+    setTimeout(()=>tryInitFB(attempt+1),500);
+  } else {
+    const el=document.getElementById('fb-st');
+    if(el)el.innerHTML='🔴 Firebase no cargó — verifica internet <button onclick="location.reload()" style="margin-left:6px;background:var(--s2);border:1px solid var(--b2);border-radius:6px;padding:3px 10px;color:var(--tx);cursor:pointer;font-size:11px;font-family:inherit">🔄 Reintentar</button>';
+  }
+}
+
+function initFB(){
+  try{
+    if(!firebase.apps.length)firebase.initializeApp(FB_CFG);
+    db=firebase.firestore();
+    fbSt('🟡 Verificando Firestore…','var(--am)');
+    // Test actual Firestore write to confirm connectivity + rules
+    db.collection('_ping').doc('test').set({ts:Date.now()})
+      .then(()=>fbSt('🟢 Firebase conectado','var(--gn)'))
+      .catch(e=>{
+        if(e.code==='permission-denied'){
+          fbSt('🔴 Reglas Firestore vencidas — ve a Firebase Console y renueva el modo de prueba','var(--rd)');
+        } else {
+          fbSt('🔴 Error Firestore: '+e.code,'var(--rd)');
+        }
+        console.error('Firestore test:',e);
+      });
+  }catch(e){
+    fbSt('🔴 Error inicializando Firebase: '+e.message,'var(--rd)');
+    console.error('Firebase init:',e);
+  }
+}
+
+window.addEventListener('DOMContentLoaded',()=>{
+  setMode('single');
+  tryInitFB(0);
+});
+</script>
+</body>
+</html>
