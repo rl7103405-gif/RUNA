@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<title>Muestristas · Deportivos Quini</title>
+<meta name="description" content="Sistema de muestristas de Deportivos Quini">
+<meta name="theme-color" content="#0D1117">
+<!-- PWA -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Quini Muestristas">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<!-- Firebase compat SDK (scripts clásicos: se ejecutan antes que los módulos) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- Indicador permanente de conexión -->
+<div id="conn" class="conn c-wait" title="Estado de conexión"><span class="cdot"></span><span id="conn-txt">Conectando…</span></div>
+
+<!-- ════ s0: USER SELECT ════ -->
+<div id="s0" class="scr on">
+  <div class="lwrap">
+    <div style="font-size:48px">🧦</div>
+    <div style="font-size:22px;font-weight:700;color:var(--am)">Deportivos Quini</div>
+    <div style="font-size:13px;color:var(--tx2)">Sistema de Muestristas</div>
+    <div id="fb-st" style="font-size:11px;color:var(--tx3)">Conectando…</div>
+    <div class="lcard">
+      <div style="font-size:12px;color:var(--tx2);margin-bottom:12px;text-align:center">¿Quién eres?</div>
+      <button class="ubtn" onclick="selectUser('lety')">
+        <span style="font-size:24px">👩‍💼</span>
+        <div><div style="font-size:15px;font-weight:600">Lety</div><div style="font-size:11px;color:var(--tx2)">Administración</div></div>
+      </button>
+      <button class="ubtn" onclick="selectUser('israel')">
+        <span style="font-size:24px">👨‍🔧</span>
+        <div><div style="font-size:15px;font-weight:600">Israel</div><div style="font-size:11px;color:var(--tx2)">Muestrista</div></div>
+      </button>
+      <button class="ubtn" onclick="selectUser('jesus')">
+        <span style="font-size:24px">👨‍🔧</span>
+        <div><div style="font-size:15px;font-weight:600">Jesús</div><div style="font-size:11px;color:var(--tx2)">Muestrista</div></div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ s1: PIN ENTRY ════ -->
+<div id="s1" class="scr">
+  <div class="lwrap">
+    <div id="pin-ico" style="font-size:44px">👩‍💼</div>
+    <div id="pin-name" style="font-size:18px;font-weight:700"></div>
+    <div style="font-size:13px;color:var(--tx2)">Ingresa tu PIN</div>
+    <div id="pin-dots-wrap">
+      <div class="pin-dots" id="pin-dots">
+        <div class="pd" id="pd0"></div><div class="pd" id="pd1"></div><div class="pd" id="pd2"></div>
+        <div class="pd" id="pd3"></div><div class="pd" id="pd4"></div><div class="pd" id="pd5"></div>
+      </div>
+    </div>
+    <div id="pin-err" style="font-size:12px;color:var(--rd);height:16px;text-align:center"></div>
+    <div class="numpad" style="margin-top:8px">
+      <button class="nk" onclick="numPad(1)">1</button>
+      <button class="nk" onclick="numPad(2)">2</button>
+      <button class="nk" onclick="numPad(3)">3</button>
+      <button class="nk" onclick="numPad(4)">4</button>
+      <button class="nk" onclick="numPad(5)">5</button>
+      <button class="nk" onclick="numPad(6)">6</button>
+      <button class="nk" onclick="numPad(7)">7</button>
+      <button class="nk" onclick="numPad(8)">8</button>
+      <button class="nk" onclick="numPad(9)">9</button>
+      <button class="nk del" onclick="clearPin()">✕</button>
+      <button class="nk" onclick="numPad(0)">0</button>
+      <button class="nk del" onclick="backPin()">⌫</button>
+    </div>
+    <button onclick="scr('s0')" style="background:none;border:none;color:var(--tx2);font-size:13px;cursor:pointer;margin-top:16px">← Cambiar usuario</button>
+  </div>
+</div>
+
+<!-- ════ sM: MUESTRISTA ════ -->
+<div id="sM" class="scr">
+  <div class="hdr">
+    <span>🧦</span>
+    <h1 id="m-name">—</h1>
+    <span class="rbM">Muestrista</span>
+    <button onclick="logout()" style="background:none;border:none;color:var(--tx2);font-size:20px;cursor:pointer;padding:4px;margin-left:4px" title="Salir">⟵</button>
+    <button onclick="openChangePinSelf()" style="background:none;border:none;color:var(--tx2);font-size:18px;cursor:pointer;padding:4px" title="Cambiar PIN">⚙️</button>
+  </div>
+  <div class="body">
+    <div id="mt0" class="tp on">
+      <div class="stitle">Mis tareas</div>
+      <div id="tareas-list"><div class="empty"><div class="ico">📋</div><p>Sin tareas asignadas</p></div></div>
+    </div>
+    <div id="mt1" class="tp">
+      <div class="stitle">Capturas activas</div>
+      <div id="activas-list"><div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div></div>
+    </div>
+    <div id="mt2" class="tp">
+      <div class="stitle">Mi historial</div>
+      <div class="g2" style="margin-bottom:12px;gap:8px">
+        <select class="fi" id="mhf" onchange="loadMHist()">
+          <option value="day">Hoy</option><option value="week">Esta semana</option>
+          <option value="month">Este mes</option><option value="year">Este año</option>
+        </select>
+        <div class="card" style="margin:0;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--tx2)">Total</div>
+          <div style="font-size:22px;font-weight:700;color:var(--am)" id="mhc">—</div>
+        </div>
+      </div>
+      <div id="mhl"></div>
+    </div>
+  </div>
+  <nav class="bnav">
+    <button class="nb on" onclick="mTab(0,this)"><span class="ico">📋</span>Tareas</button>
+    <button class="nb" onclick="mTab(1,this)"><span class="ico">⏱</span>Activas</button>
+    <button class="nb" onclick="mTab(2,this)"><span class="ico">📊</span>Historial</button>
+  </nav>
+</div>
+
+<!-- ════ sL: LETY ════ -->
+<div id="sL" class="scr">
+  <div class="hdr">
+    <span>🧦</span>
+    <h1>Lety — Administración</h1>
+    <span class="rbA">Admin</span>
+    <button onclick="logout()" style="background:none;border:none;color:var(--tx2);font-size:20px;cursor:pointer;padding:4px;margin-left:4px">⟵</button>
+  </div>
+  <div class="body">
+    <!-- ASIGNAR -->
+    <div id="lt0" class="tp on">
+      <div class="stitle">Nuevo desarrollo</div>
+      <div class="mode-sel">
+        <button class="ms-btn on" id="ms-single" onclick="setMode('single')">📌 Código único</button>
+        <button class="ms-btn" id="ms-pack" onclick="setMode('pack')">📦 Pack con variantes</button>
+      </div>
+      <div class="fsec">
+        <div class="ftitle">Datos del pedido</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">OT</label><input class="fi" id="l-ot" placeholder="7735"></div>
+          <div class="fg"><label class="fl">PO</label><input class="fi" id="l-po" placeholder="2422"></div>
+        </div>
+        <div class="fg"><label class="fl">Código Quini</label><input class="fi" id="l-cq" placeholder="2803"></div>
+        <div class="fg"><label class="fl">Modelo</label><input class="fi" id="l-mod" placeholder="RBMCP101"></div>
+        <div class="fg"><label class="fl">Cliente</label><input class="fi" id="l-cli" placeholder="Martí / Reebok"></div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Género</label>
+            <select class="fi" id="l-gen"><option>Caballero</option><option>Dama</option><option>Niño</option><option>Niña</option><option>Unitalla</option></select>
+          </div>
+          <div class="fg"><label class="fl">Talla</label><input class="fi" id="l-tal" placeholder="Unitalla"></div>
+        </div>
+        <div class="fg"><label class="fl">Tipo de producto</label><input class="fi" id="l-tprod" placeholder="6 Pack Mid Crew Básico Liso"></div>
+        <div class="fg">
+          <label class="fl">Complejidad (solo visible para ti)</label>
+          <select class="fi" id="l-comp">
+            <option value="A">A — Tin básico / liso · 1.0 pts</option>
+            <option value="B">B — Con diseño · 2.0 pts</option>
+            <option value="C">C — Jacquard / alta complejidad · 3.5 pts</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label class="fl">Asignar a</label>
+          <select class="fi" id="l-asig"><option value="israel">Israel</option><option value="jesus">Jesús</option></select>
+        </div>
+        <div class="fg"><label class="fl">Notas para el muestrista</label><textarea class="fi" id="l-notas" rows="2" placeholder="Instrucciones especiales..."></textarea></div>
+      </div>
+      <!-- SINGLE MODE -->
+      <div id="form-single" class="fsec">
+        <div class="ftitle">Datos del código</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Código variante</label><input class="fi" id="s-cod" placeholder="2798"></div>
+          <div class="fg"><label class="fl">Descripción / color</label><input class="fi" id="s-desc" placeholder="Negro"></div>
+        </div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Pares requeridos</label><input class="fi" type="number" id="s-pares" placeholder="6000"></div>
+          <div class="fg"><label class="fl">Tipo de pack</label><input class="fi" id="s-pack" placeholder="Individual"></div>
+        </div>
+      </div>
+      <!-- PACK MODE -->
+      <div id="form-pack" class="fsec" style="display:none">
+        <div class="ftitle">Variantes del pack</div>
+        <div id="vlist"></div>
+        <div style="background:var(--bg);border-radius:var(--r);padding:10px;border:1px dashed var(--b2);margin-bottom:8px">
+          <div class="g2" style="margin-bottom:8px">
+            <div class="fg" style="margin:0"><label class="fl">Código variante</label><input class="fi" id="vc" placeholder="2798"></div>
+            <div class="fg" style="margin:0"><label class="fl">Descripción</label><input class="fi" id="vd" placeholder="Negro"></div>
+          </div>
+          <div class="g2">
+            <div class="fg" style="margin:0"><label class="fl">Pares requeridos</label><input class="fi" type="number" id="vp" placeholder="6000"></div>
+            <div class="fg" style="margin:0"><label class="fl">Tipo de pack</label><input class="fi" id="vpk" placeholder="6 Pack"></div>
+          </div>
+          <button class="btn btn-bl btn-sm" style="width:100%;margin-top:8px" onclick="addVar()">+ Agregar variante</button>
+        </div>
+      </div>
+      <div class="al alw"><span>⚠️</span><span style="font-size:12px">La complejidad <strong>NO</strong> es visible para los muestristas.</span></div>
+      <button class="btn btn-am" onclick="asignar()">✓ Asignar desarrollo</button>
+    </div>
+    <!-- REVISAR -->
+    <div id="lt1" class="tp">
+      <div class="stitle">Pendientes de revisión</div>
+      <div id="pend-list"><div class="empty"><div class="ico">✅</div><p>Sin fichas pendientes</p></div></div>
+      <div class="stitle" style="margin-top:16px">En proceso</div>
+      <div id="proc-list"><div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div></div>
+    </div>
+    <!-- DASHBOARD -->
+    <div id="lt2" class="tp">
+      <div class="stitle">Dashboard</div>
+      <div class="g2" style="gap:8px;margin-bottom:12px">
+        <select class="fi" id="dp" onchange="loadDB()"><option value="day">Hoy</option><option value="week">Semana</option><option value="month" selected>Mes</option><option value="year">Año</option></select>
+        <select class="fi" id="dw" onchange="loadDB()"><option value="all">Todos</option><option value="israel">Israel</option><option value="jesus">Jesús</option></select>
+      </div>
+      <div class="g2" style="gap:8px;margin-bottom:12px">
+        <div class="card am" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">Completadas</div><div style="font-size:24px;font-weight:700;color:var(--am)" id="db0">—</div></div>
+        <div class="card gn" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TEN promedio</div><div style="font-size:24px;font-weight:700;color:var(--gn)" id="db1">—</div></div>
+        <div class="card bl" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">IPP 1ª pasada</div><div style="font-size:24px;font-weight:700;color:var(--bl)" id="db2">—</div></div>
+        <div class="card" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TM total (min)</div><div style="font-size:24px;font-weight:700" id="db3">—</div></div>
+      </div>
+      <button class="btn btn-bl btn-sm" style="margin-bottom:12px" onclick="exportCSV()">📥 Exportar historial a CSV</button>
+      <div class="stitle">Historial</div>
+      <div id="db-list"></div>
+    </div>
+    <!-- CONFIG -->
+    <div id="lt3" class="tp">
+      <div class="stitle">PINs de acceso</div>
+      <div class="card" style="margin-bottom:8px">
+        <div style="font-size:12px;color:var(--tx2);margin-bottom:12px">Cambia el PIN de cualquier usuario. Se te pedirá tu PIN de admin para confirmar.</div>
+        <div class="pin-row">
+          <div><span style="font-size:16px">👩‍💼</span> <strong>Lety</strong></div>
+          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('lety')">🔑 Cambiar PIN</button>
+        </div>
+        <div class="pin-row">
+          <div><span style="font-size:16px">👨‍🔧</span> <strong>Israel</strong></div>
+          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('israel')">🔑 Cambiar PIN</button>
+        </div>
+        <div class="pin-row" style="margin-bottom:0">
+          <div><span style="font-size:16px">👨‍🔧</span> <strong>Jesús</strong></div>
+          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('jesus')">🔑 Cambiar PIN</button>
+        </div>
+      </div>
+      <div class="al ali"><span>ℹ️</span><span style="font-size:12px">PINs por defecto: Lety=<strong>123456</strong> · Israel=<strong>000001</strong> · Jesús=<strong>000002</strong></span></div>
+    </div>
+  </div>
+  <nav class="bnav">
+    <button class="nb on" onclick="ltTab(0,this)"><span class="ico">➕</span>Asignar</button>
+    <button class="nb" onclick="ltTab(1,this)"><span class="ico">📝</span>Revisar</button>
+    <button class="nb" onclick="ltTab(2,this)"><span class="ico">📊</span>Dashboard</button>
+    <button class="nb" onclick="ltTab(3,this)"><span class="ico">⚙️</span>Config</button>
+  </nav>
+</div>
+
+<!-- ════ sC: CAPTURA FORM ════ -->
+<div id="sC" class="scr">
+  <div class="hdr">
+    <button onclick="backCaptura()" style="background:none;border:none;color:var(--tx2);font-size:22px;cursor:pointer;padding:4px;flex-shrink:0">←</button>
+    <h1 id="ct">Ficha práctica</h1>
+    <span id="cc" class="vcod" style="flex-shrink:0"></span>
+  </div>
+  <div class="body" id="cbody"></div>
+</div>
+
+<!-- ════ sF: FIRMA ════ -->
+<div id="sF" class="scr">
+  <div class="hdr">
+    <button onclick="backFirma()" style="background:none;border:none;color:var(--tx2);font-size:22px;cursor:pointer;padding:4px;flex-shrink:0">←</button>
+    <h1 id="ft">Firma digital</h1>
+  </div>
+  <div class="body">
+    <div class="al ali" id="fi-inst"><span>✍️</span><span>Dibuja tu firma para confirmar</span></div>
+    <div class="fsec">
+      <canvas id="sig-cv"></canvas>
+      <button class="btn btn-gh btn-sm" style="margin-top:10px" onclick="clearSig()">🗑 Limpiar</button>
+    </div>
+    <button class="btn btn-am" onclick="saveSig()">✓ Confirmar firma</button>
+    <button class="btn btn-gh" onclick="backFirma()">Cancelar</button>
+  </div>
+</div>
+
+<!-- ════ sR: REVISIÓN LETY ════ -->
+<div id="sR" class="scr">
+  <div class="hdr">
+    <button onclick="backRev()" style="background:none;border:none;color:var(--tx2);font-size:22px;cursor:pointer;padding:4px;flex-shrink:0">←</button>
+    <h1 id="rtitle">Revisar ficha práctica</h1>
+  </div>
+  <div class="body" id="rbody"></div>
+</div>
+
+<!-- MODAL: TM -->
+<div class="ovl" id="otm">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px">⏸ Tiempo muerto</div>
+    <div class="al ali" style="margin-bottom:12px"><span>💡</span><span style="font-size:12px">Las causas <strong>externas</strong> no afectan tus KPIs.</span></div>
+    <div id="tm-btns"></div>
+    <button class="btn btn-gh btn-sm" style="margin-top:4px;width:100%" onclick="closeOvl('otm')">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL: TM ACTIVO -->
+<div class="ovl" id="otma">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px">⏸ TM activo</div>
+    <div class="al alw" style="margin-bottom:14px"><span>⚠️</span><div><strong id="tma-cause">—</strong><br><span style="font-size:12px">TEN pausado. Presiona "Fin" cuando se resuelva.</span></div></div>
+    <button class="btn btn-gn" onclick="endTMA()">✓ Fin — reanudar trabajo</button>
+    <button class="btn btn-gh" onclick="closeOvl('otma')">Volver</button>
+  </div>
+</div>
+
+<!-- MODAL: CHANGE PIN -->
+<div class="ovl" id="ocp">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px">🔑 Cambiar PIN</div>
+    <div style="font-size:13px;color:var(--tx2);margin-bottom:14px" id="cp-who-label">—</div>
+    <div class="fg"><label class="fl">Nuevo PIN (6 dígitos)</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-new" placeholder="••••••"></div>
+    <div class="fg"><label class="fl">Confirmar nuevo PIN</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-confirm" placeholder="••••••"></div>
+    <div class="fg" id="cp-admin-wrap"><label class="fl">PIN de admin (Lety) para confirmar</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-admin" placeholder="••••••"></div>
+    <button class="btn btn-am" onclick="savePin()">✓ Guardar PIN</button>
+    <button class="btn btn-gh" onclick="closeOvl('ocp')">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL: CONFIRMACIÓN GENÉRICA -->
+<div class="ovl" id="ocf">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px" id="cf-title">¿Confirmar?</div>
+    <div style="font-size:13px;color:var(--tx2);margin-bottom:16px" id="cf-msg"></div>
+    <button class="btn btn-rd" id="cf-ok">Confirmar</button>
+    <button class="btn btn-gh" onclick="closeOvl('ocf')">Cancelar</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

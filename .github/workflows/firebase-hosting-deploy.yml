@@ -1,0 +1,25 @@
+# Deploy automático a Firebase Hosting en cada push a main.
+#
+# Requiere el secret FIREBASE_SERVICE_ACCOUNT_QUINI_MUESTRISTAS en GitHub:
+#   1. Firebase Console → Configuración del proyecto → Cuentas de servicio
+#      → Generar nueva clave privada (JSON)
+#      (o ejecutar `firebase init hosting:github`, que lo configura solo)
+#   2. GitHub → Settings → Secrets and variables → Actions → New secret
+#      con el contenido completo del JSON.
+name: Deploy to Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_QUINI_MUESTRISTAS }}
+          channelId: live
+          projectId: quini-muestristas
