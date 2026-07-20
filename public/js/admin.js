@@ -1,7 +1,7 @@
 // Vista de Lety: asignación de desarrollos y revisión/aprobación de fichas
 import { db, fsOk } from './fb.js';
-import { APP, USERS } from './state.js';
-import { es, fmt, fmtMin, fmtDate, gv, scr, toast, confirmDlg } from './utils.js';
+import { APP, USERS, TM_CAUSES } from './state.js';
+import { es, fmt, fmtMin, fmtDate, gv, scr, toast, confirmDlg, tenFromDoc, esFirmaValida } from './utils.js';
 import { showFirma } from './firma.js';
 import { loadDB } from './dashboard.js';
 
@@ -28,6 +28,9 @@ export function setMode(mode) {
 export function addVar() {
   const cod = gv('vc').trim();
   if (!cod) { toast('Ingresa código de variante', false); return; }
+  // startCap identifica la variante por código: repetirlo colapsaría dos
+  // variantes en una sola captura
+  if (APP.vars.some(v => v.codigo === cod)) { toast('Ya agregaste una variante con ese código', false); return; }
   APP.vars.push({ codigo: cod, descripcion: gv('vd').trim(), pares_requeridos: gv('vp').trim(), tipo_pack: gv('vpk').trim() });
   ['vc', 'vd', 'vp', 'vpk'].forEach(id => { document.getElementById(id).value = ''; });
   renderVars();
@@ -41,8 +44,10 @@ function renderVars() {
     </div>`).join('');
 }
 
+let asignando = false;
+
 export async function asignar() {
-  if (!fsOk()) return;
+  if (!fsOk() || asignando) return;
   const mod = gv('l-mod').trim();
   if (!mod) { toast('Ingresa el modelo', false); return; }
   let variantes = [];
@@ -54,6 +59,7 @@ export async function asignar() {
     if (APP.vars.length === 0) { toast('Agrega al menos una variante', false); return; }
     variantes = [...APP.vars];
   }
+  asignando = true;
   try {
     await db.collection('desarrollos').add({
       ot: gv('l-ot'), po: gv('l-po'), codigo_quini: gv('l-cq'),
@@ -74,6 +80,7 @@ export async function asignar() {
     });
     toast('✅ Desarrollo asignado');
   } catch (e) { console.error(e); toast('Error asignando', false); }
+  finally { asignando = false; }
 }
 
 // ── Revisar ──
@@ -98,7 +105,10 @@ export async function loadRev() {
             <div class="ds">${(USERS[dt.id_muestrista] || {}).nombre || es(dt.id_muestrista)} · ${fmtDate(dt.dt_inicio)}</div>
           </div>`;
         }).join('');
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error(e);
+    toast('Error cargando fichas — revisa tu conexión', false);
+  }
 }
 
 function renderRevCard(id, d) {
@@ -120,8 +130,15 @@ export async function openRev(capturaId, readOnly = false) {
     if (!d) { toast('Ficha no encontrada', false); return; }
     document.getElementById('rtitle').textContent = readOnly ? 'Ficha aprobada' : 'Revisar ficha práctica';
     // TEN calculado desde Firestore, no desde timers en memoria
-    const tn = Math.max(0, (d.elapsed_seg || 0) - (d.tm_seg || 0));
+    const tn = tenFromDoc(d);
     const sh = d.med_sh || {}, mh = d.med_h || {}, gi = d.giros || {}, vl = d.vels || {}, pt = d.pto || {};
+    // Desglose de TM por causa (auditoría de Lety)
+    const tmDet = Object.entries(d.tm_causas || {})
+      .filter(([, s]) => typeof s === 'number' && s > 0)
+      .map(([cid, s]) => {
+        const c = TM_CAUSES.find(x => x.id === cid);
+        return `<div class="mr"><span>${es(c ? c.label : cid)}${c && c.pen ? ' <span class="bge brd">cuenta en TEN</span>' : ''}</span><span>${fmtMin(s)}</span></div>`;
+      }).join('');
     document.getElementById('rbody').innerHTML = `
       <div class="card ${readOnly ? 'gn' : 'bl'}">
         <div class="dt">${es(d.modelo)} · <span class="vcod">${es(d.codigo_variante)}</span>${(d.iter || 1) > 1 ? ` <span class="bge bpend">iter ${es(d.iter)}</span>` : ''}</div>
@@ -130,6 +147,7 @@ export async function openRev(capturaId, readOnly = false) {
         <div class="mr"><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn)}</strong></span><span>TM: <span style="color:var(--rd)">${fmtMin(d.tm_seg || 0)}</span></span></div>
         <div class="mr"><span>Bruto: ${fmtMin(d.elapsed_seg || 0)}</span><span>${fmtDate(d.dt_fin)}</span></div>
       </div>
+      ${tmDet ? `<div class="fsec"><div class="ftitle">Tiempos muertos por causa</div>${tmDet}</div>` : ''}
       <div class="fsec"><div class="ftitle">Máquina</div>
         <div class="g2" style="font-size:13px">
           <div><label class="fl">Marca</label>${es(d.maquina_marca) || '—'}</div>
@@ -167,8 +185,8 @@ export async function openRev(capturaId, readOnly = false) {
         <div style="font-size:13px"><label class="fl">Pares producidos</label>${es(d.pares) || '—'} de ${es(d.pares_requeridos) || '—'} requeridos</div>
       </div>
       ${d.obs ? `<div class="fsec"><div class="ftitle">Observaciones</div><div style="font-size:13px">${es(d.obs)}</div></div>` : ''}
-      ${d.firma_m ? `<div class="fsec"><div class="ftitle">Firma muestrista</div><img src="${d.firma_m}" alt="Firma muestrista" style="max-width:100%;border-radius:var(--r);border:1px solid var(--b2)"></div>` : ''}
-      ${readOnly && d.firma_l ? `<div class="fsec"><div class="ftitle">Firma de aprobación (Lety)</div><img src="${d.firma_l}" alt="Firma Lety" style="max-width:100%;border-radius:var(--r);border:1px solid var(--b2)"></div>` : ''}
+      ${esFirmaValida(d.firma_m) ? `<div class="fsec"><div class="ftitle">Firma muestrista</div><img src="${es(d.firma_m)}" alt="Firma muestrista" style="max-width:100%;border-radius:var(--r);border:1px solid var(--b2)"></div>` : ''}
+      ${readOnly && esFirmaValida(d.firma_l) ? `<div class="fsec"><div class="ftitle">Firma de aprobación (Lety)</div><img src="${es(d.firma_l)}" alt="Firma Lety" style="max-width:100%;border-radius:var(--r);border:1px solid var(--b2)"></div>` : ''}
       ${readOnly
         ? `<button class="btn btn-bl" onclick="reabrirFicha()">🔓 Reabrir ficha (volver a pendiente)</button>`
         : `<div class="brow">
@@ -187,6 +205,17 @@ export function aprobar() {
   showFirma();
 }
 
+// Cambio de estado condicionado: solo procede si la ficha sigue en el estado
+// esperado (una pantalla vieja no puede pisar un cambio más reciente)
+async function transicion(capId, esperado, cambios) {
+  const ref = db.collection('capturas').doc(capId);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists || snap.data().estado !== esperado) throw new Error('estado-cambiado');
+    tx.update(ref, cambios);
+  });
+}
+
 export function rechazar() {
   confirmDlg(
     'Solicitar corrección',
@@ -195,11 +224,16 @@ export function rechazar() {
     async () => {
       if (!fsOk()) return;
       try {
-        await db.collection('capturas').doc(APP.revCap).update({ estado: 'correccion', firma_m: null });
+        await transicion(APP.revCap, 'pendiente_lety', { estado: 'correccion', firma_m: null });
         toast('Corrección solicitada');
-        scr('sL');
-        loadRev();
-      } catch (e) { console.error(e); toast('Error solicitando corrección', false); }
+      } catch (e) {
+        console.error(e);
+        toast(e && e.message === 'estado-cambiado'
+          ? 'La ficha ya cambió de estado — lista actualizada'
+          : 'Error solicitando corrección', false);
+      }
+      scr('sL');
+      loadRev();
     }
   );
 }
@@ -214,12 +248,17 @@ export function reabrirFicha() {
     async () => {
       if (!fsOk()) return;
       try {
-        await db.collection('capturas').doc(APP.revCap).update({ estado: 'pendiente_lety', firma_l: null });
+        await transicion(APP.revCap, 'aprobado', { estado: 'pendiente_lety', firma_l: null });
         toast('Ficha reabierta — pendiente de revisión');
-        scr('sL');
-        loadRev();
-        loadDB();
-      } catch (e) { console.error(e); toast('Error reabriendo ficha', false); }
+      } catch (e) {
+        console.error(e);
+        toast(e && e.message === 'estado-cambiado'
+          ? 'La ficha ya cambió de estado — lista actualizada'
+          : 'Error reabriendo ficha', false);
+      }
+      scr('sL');
+      loadRev();
+      loadDB();
     }
   );
 }

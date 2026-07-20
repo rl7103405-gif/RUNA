@@ -11,9 +11,13 @@ rules_version = '2';
 //   2. Limitar el acceso EXCLUSIVAMENTE a las 4 colecciones de la app —
 //      cualquier otra colección queda bloqueada.
 //   3. Validar la forma de los datos (tipos, estados válidos, formato de
-//      PIN, usuarios conocidos) para que un cliente con errores o un
-//      tercero no pueda corromper los documentos.
-//   4. Prohibir borrados: el historial de fichas es un registro de trabajo.
+//      PIN, usuarios conocidos, firmas PNG bien formadas, tiempos
+//      coherentes) para que un cliente con errores o un tercero no pueda
+//      corromper los documentos.
+//   4. Proteger campos sensibles: en `desarrollos` no se pueden reescribir
+//      complejidad/asignación/variantes; una ficha aprobada solo puede
+//      reabrirse (no editarse); los estados firmados exigen su firma.
+//   5. Prohibir borrados: el historial de fichas es un registro de trabajo.
 //
 // Mejora futura (cuando se active el plan Blaze / Firebase Auth): usar
 // Auth anónimo + custom claims para amarrar cada rol a su dispositivo.
@@ -37,6 +41,21 @@ service cloud.firestore {
     function estadoDesarrolloValido(e) {
       return e in ['pendiente', 'en_proceso'];
     }
+    // Firma: ausente, null, o data-URL PNG bien formado (la app solo
+    // renderiza este formato; bloquea payloads de XSS almacenado)
+    function firmaOk(data, campo) {
+      return !(campo in data) || data[campo] == null
+        || (data[campo] is string
+            && data[campo].size() < 300000
+            && data[campo].matches('data:image/png;base64,[A-Za-z0-9+/=]+'));
+    }
+    // Tiempos coherentes: números no negativos, TM nunca mayor que el bruto
+    function tiemposOk(data) {
+      return data.elapsed_seg is number && data.tm_seg is number
+        && data.elapsed_seg >= 0 && data.tm_seg >= 0
+        && data.tm_seg <= data.elapsed_seg
+        && (!('tm_causas' in data) || data.tm_causas is map);
+    }
 
     // ── desarrollos: tareas que Lety asigna ──
     match /desarrollos/{devId} {
@@ -48,7 +67,12 @@ service cloud.firestore {
                     && request.resource.data.tipo_complejidad in ['A', 'B', 'C']
                     && request.resource.data.variantes is list
                     && request.resource.data.variantes.size() > 0;
-      allow update: if estadoDesarrolloValido(request.resource.data.estado);
+      // La app solo cambia `estado`; los campos sensibles son inmutables
+      allow update: if estadoDesarrolloValido(request.resource.data.estado)
+                    && request.resource.data.get('tipo_complejidad', '') == resource.data.get('tipo_complejidad', '')
+                    && request.resource.data.get('asignado_a', '') == resource.data.get('asignado_a', '')
+                    && request.resource.data.get('variantes', []) == resource.data.get('variantes', [])
+                    && request.resource.data.get('creado_por', '') == resource.data.get('creado_por', '');
       allow delete: if false;
     }
 
@@ -59,14 +83,35 @@ service cloud.firestore {
                     && request.resource.data.id_desarrollo is string
                     && request.resource.data.codigo_variante is string
                     && request.resource.data.estado == 'activo'
-                    && request.resource.data.elapsed_seg is number
-                    && request.resource.data.tm_seg is number;
+                    && tiemposOk(request.resource.data)
+                    && firmaOk(request.resource.data, 'firma_m')
+                    && firmaOk(request.resource.data, 'firma_l');
       allow update: if estadoCapturaValido(request.resource.data.estado)
-                    // El dueño y el desarrollo de origen no se pueden reasignar
+                    // El dueño, el desarrollo de origen y la variante no se reasignan
                     && request.resource.data.id_muestrista == resource.data.id_muestrista
                     && request.resource.data.id_desarrollo == resource.data.id_desarrollo
-                    && request.resource.data.elapsed_seg is number
-                    && request.resource.data.tm_seg is number;
+                    && request.resource.data.get('codigo_variante', '') == resource.data.get('codigo_variante', '')
+                    && tiemposOk(request.resource.data)
+                    && firmaOk(request.resource.data, 'firma_m')
+                    && firmaOk(request.resource.data, 'firma_l')
+                    // Una ficha aprobada solo puede reabrirse a pendiente_lety
+                    && (resource.data.estado != 'aprobado'
+                        || request.resource.data.estado == 'pendiente_lety')
+                    // Una ficha firmada (pendiente) solo se aprueba o se rechaza:
+                    // nadie puede seguir editando sus tiempos congelados
+                    && (resource.data.estado != 'pendiente_lety'
+                        || request.resource.data.estado in ['aprobado', 'correccion'])
+                    // El estado 'aprobado' solo puede llegar desde 'pendiente_lety'
+                    // (evita saltarse el flujo de firma de Lety)
+                    && (request.resource.data.estado != 'aprobado'
+                        || resource.data.estado == 'pendiente_lety')
+                    // Los estados firmados exigen su firma correspondiente
+                    && (request.resource.data.estado != 'pendiente_lety'
+                        || (('firma_m' in request.resource.data) && request.resource.data.firma_m is string))
+                    && (request.resource.data.estado != 'aprobado'
+                        || (('firma_l' in request.resource.data) && request.resource.data.firma_l is string))
+                    && (request.resource.data.estado != 'aprobado'
+                        || (('firma_m' in request.resource.data) && request.resource.data.firma_m is string));
       allow delete: if false;
     }
 

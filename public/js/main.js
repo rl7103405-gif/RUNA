@@ -4,7 +4,7 @@ import { tryInitFB } from './fb.js';
 import { scr, closeOvl } from './utils.js';
 import { selectUser, numPad, backPin, clearPin, logout, openChangePin, openChangePinSelf, savePin } from './auth.js';
 import { mTab, loadMHist, openTMFor, endTMA, wireMuestristaEvents } from './muestrista.js';
-import { togCapTimer, backCaptura, saveDraft, saveAndSign } from './captura.js';
+import { togCapTimer, backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
 import { clearSig, saveSig, backFirma } from './firma.js';
 import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents } from './admin.js';
 import { loadDB, exportCSV } from './dashboard.js';
@@ -26,6 +26,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setMode('single');
   wireMuestristaEvents();
   wireAdminEvents();
+  wireCapturaEvents();
   // Cerrar modales al tocar el fondo (excepto el de confirmación)
   ['otm', 'otma', 'ocp'].forEach(id => {
     const ovl = document.getElementById(id);

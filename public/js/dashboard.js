@@ -1,10 +1,16 @@
 // Dashboard de Lety: KPIs, historial filtrable y exportación a CSV
 import { db, fsOk } from './fb.js';
-import { APP, USERS } from './state.js';
-import { es, fmtMin, fmtDate, getRange, toast } from './utils.js';
+import { APP, USERS, TM_CAUSES } from './state.js';
+import { es, fmtMin, fmtDate, getRange, toast, tenFromDoc, penFromCausas } from './utils.js';
+
+// Identificador de carga: si el filtro cambia mientras una consulta vieja
+// sigue en vuelo, la respuesta vieja se descarta (no pisa la nueva)
+let loadSeq = 0;
 
 export async function loadDB() {
   if (!fsOk()) return;
+  const seq = ++loadSeq;
+  APP.dbDocs = []; // el CSV nunca exporta datos de un filtro anterior
   try {
     const period = document.getElementById('dp')?.value || 'month';
     const who = document.getElementById('dw')?.value || 'all';
@@ -12,6 +18,7 @@ export async function loadDB() {
     let q = db.collection('capturas');
     if (who !== 'all') q = q.where('id_muestrista', '==', who);
     const snap = await q.get();
+    if (seq !== loadSeq) return; // llegó tarde: ya hay una carga más nueva
     // Filtrado por fecha/estado en cliente (evita índices compuestos)
     const docs = snap.docs.filter(d => {
       const dt = d.data();
@@ -23,19 +30,20 @@ export async function loadDB() {
     const aprob = docs.filter(d => d.data().estado === 'aprobado');
     // IPP 1ª pasada: % de fichas aprobadas sin ninguna corrección (iter 1)
     const firstPass = aprob.filter(d => (d.data().iter || 1) === 1).length;
-    const avgTen = docs.length > 0
-      ? Math.round(docs.reduce((a, d) => { const dt = d.data(); return a + Math.max(0, (dt.elapsed_seg || 0) - (dt.tm_seg || 0)); }, 0) / docs.length / 60)
-      : 0;
+    // KPIs de cierre solo sobre APROBADAS (una ficha en corrección no está completada)
+    const avgTen = aprob.length > 0
+      ? Math.round(aprob.reduce((a, d) => a + tenFromDoc(d.data()), 0) / aprob.length / 60)
+      : null;
     const tmTot = docs.reduce((a, d) => a + (d.data().tm_seg || 0), 0);
-    document.getElementById('db0').textContent = docs.length;
-    document.getElementById('db1').textContent = avgTen + 'm';
+    document.getElementById('db0').textContent = aprob.length;
+    document.getElementById('db1').textContent = avgTen === null ? '—' : avgTen + 'm';
     document.getElementById('db2').textContent = aprob.length ? Math.round(firstPass / aprob.length * 100) + '%' : '—';
     document.getElementById('db3').textContent = Math.round(tmTot / 60);
     document.getElementById('db-list').innerHTML = docs.length === 0
       ? '<div class="empty"><div class="ico">📭</div><p>Sin capturas en este período</p></div>'
       : docs.map(d => {
           const dt = d.data();
-          const tn = Math.max(0, (dt.elapsed_seg || 0) - (dt.tm_seg || 0));
+          const tn = tenFromDoc(dt);
           const badge = dt.estado === 'aprobado' ? '<span class="bge bok">✅ aprobado</span>'
             : dt.estado === 'correccion' ? '<span class="bge brd">🔁 corrección</span>'
             : '<span class="bge bpend">🔄 pendiente</span>';
@@ -50,7 +58,10 @@ export async function loadDB() {
             ${dt.estado === 'aprobado' ? `<button class="btn btn-bl btn-sm" style="margin-top:8px;width:100%" data-view="${es(d.id)}">👁 Ver ficha aprobada</button>` : ''}
           </div>`;
         }).join('');
-  } catch (e) { console.error('Dashboard error:', e); }
+  } catch (e) {
+    console.error('Dashboard error:', e);
+    if (seq === loadSeq) toast('Error cargando el dashboard — revisa tu conexión', false);
+  }
 }
 
 // ── Exportar historial a CSV ──
@@ -59,31 +70,45 @@ function csvCell(v) {
   return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
+// Campos de texto libre: neutralizar inicio de fórmula para Excel
+function txt(v) {
+  const s = String(v ?? '');
+  return /^[\s]*[=+\-@\t\r]/.test(s) ? "'" + s : s;
+}
+
 export function exportCSV() {
   const docs = APP.dbDocs || [];
   if (docs.length === 0) { toast('No hay datos en el período seleccionado', false); return; }
   const header = ['fecha_fin', 'muestrista', 'estado', 'iteracion', 'ot', 'po', 'modelo', 'cliente', 'tipo_producto',
     'codigo_variante', 'descripcion', 'tipo_pack', 'pares_producidos', 'pares_requeridos',
-    'bruto_min', 'tm_min', 'ten_min', 'maquina_marca', 'maquina_numero',
+    'bruto_min', 'tm_min', 'tm_penalizable_min', 'ten_min', 'maquina_marca', 'maquina_numero',
     't_ciclo_min', 't_ciclo_seg', 'peso_salida_g', 'peso_cerrado_g',
     'med_sh_A', 'med_sh_B', 'med_sh_C', 'med_sh_D', 'med_sh_E',
     'med_h_A', 'med_h_B', 'med_h_C', 'med_h_D', 'med_h_E',
     'giros_elastico', 'giros_tubo', 'giros_planta', 'giros_rubber',
     'vel_elastico', 'vel_tubo', 'vel_talon_punta', 'vel_planta',
-    'den1', 'den2', 'sink2', 'observaciones'];
+    'den1', 'den2', 'sink2',
+    ...TM_CAUSES.map(c => 'tm_' + c.id + '_min'),
+    'observaciones'];
   const rows = docs.map(({ data: dt }) => {
     const sh = dt.med_sh || {}, mh = dt.med_h || {}, gi = dt.giros || {}, vl = dt.vels || {}, pt = dt.pto || {};
+    const tc = dt.tm_causas || {};
     const fin = dt.dt_fin && dt.dt_fin.toDate ? dt.dt_fin.toDate().toISOString() : '';
     const bruto = dt.elapsed_seg || 0, tm = dt.tm_seg || 0;
-    return [fin, (USERS[dt.id_muestrista] || {}).nombre || dt.id_muestrista, dt.estado, dt.iter || 1,
-      dt.ot, dt.po, dt.modelo, dt.cliente, dt.tipo_producto,
-      dt.codigo_variante, dt.descripcion_variante, dt.tipo_pack, dt.pares, dt.pares_requeridos,
-      (bruto / 60).toFixed(1), (tm / 60).toFixed(1), (Math.max(0, bruto - tm) / 60).toFixed(1),
-      dt.maquina_marca, dt.maquina_numero,
-      dt.t_ciclo_min, dt.t_ciclo_seg, dt.peso_sal, dt.peso_cer,
-      sh.A, sh.B, sh.C, sh.D, sh.E, mh.A, mh.B, mh.C, mh.D, mh.E,
-      gi.el, gi.tb, gi.pl, gi.rb, vl.el, vl.tb, vl.tp, vl.pl,
-      pt.d1, pt.d2, pt.sk, dt.obs].map(csvCell).join(',');
+    return [fin, (USERS[dt.id_muestrista] || {}).nombre || dt.id_muestrista, dt.estado, Number(dt.iter) || 1,
+      txt(dt.ot), txt(dt.po), txt(dt.modelo), txt(dt.cliente), txt(dt.tipo_producto),
+      txt(dt.codigo_variante), txt(dt.descripcion_variante), txt(dt.tipo_pack), txt(dt.pares), txt(dt.pares_requeridos),
+      (bruto / 60).toFixed(1), (tm / 60).toFixed(1),
+      (penFromCausas(tc) / 60).toFixed(1), (tenFromDoc(dt) / 60).toFixed(1),
+      txt(dt.maquina_marca), txt(dt.maquina_numero),
+      txt(dt.t_ciclo_min), txt(dt.t_ciclo_seg), txt(dt.peso_sal), txt(dt.peso_cer),
+      txt(sh.A), txt(sh.B), txt(sh.C), txt(sh.D), txt(sh.E),
+      txt(mh.A), txt(mh.B), txt(mh.C), txt(mh.D), txt(mh.E),
+      txt(gi.el), txt(gi.tb), txt(gi.pl), txt(gi.rb),
+      txt(vl.el), txt(vl.tb), txt(vl.tp), txt(vl.pl),
+      txt(pt.d1), txt(pt.d2), txt(pt.sk),
+      ...TM_CAUSES.map(c => ((tc[c.id] || 0) / 60).toFixed(1)),
+      txt(dt.obs)].map(csvCell).join(',');
   });
   // BOM para que Excel abra acentos correctamente
   const csv = '\uFEFF' + header.join(',') + '\n' + rows.join('\n');

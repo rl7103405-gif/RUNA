@@ -1,4 +1,5 @@
 // Utilidades de UI y formato
+import { TM_CAUSES } from './state.js';
 
 export function p(n) { return String(n).padStart(2, '0'); }
 export function fmt(s) {
@@ -54,4 +55,27 @@ export function confirmDlg(title, msg, okLabel, onOk) {
   btn.textContent = okLabel;
   btn.onclick = () => { closeOvl('ocf'); onOk(); };
   openOvl('ocf');
+}
+
+// ── TM penalizable y TEN desde datos persistidos ──
+const PEN_IDS = new Set(TM_CAUSES.filter(c => c.pen).map(c => c.id));
+
+// Suma de segundos de causas que sí penalizan dentro de un mapa {causa: seg}
+export function penFromCausas(tc) {
+  let s = 0;
+  Object.entries(tc || {}).forEach(([c, v]) => {
+    if (PEN_IDS.has(c) && typeof v === 'number' && v > 0) s += v;
+  });
+  return Math.floor(s);
+}
+
+// TEN de una captura persistida: bruto − TM + TM penalizable
+export function tenFromDoc(dt) {
+  return Math.max(0, (dt.elapsed_seg || 0) - (dt.tm_seg || 0) + penFromCausas(dt.tm_causas));
+}
+
+// Solo aceptamos como firma un PNG en data-URL bien formado; cualquier otra
+// cosa en firma_m/firma_l se ignora al renderizar (bloquea XSS almacenado)
+export function esFirmaValida(v) {
+  return typeof v === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(v);
 }
