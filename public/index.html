@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <title>Muestristas · Deportivos Quini</title>
 <meta name="description" content="Sistema de muestristas de Deportivos Quini">
-<meta name="theme-color" content="#0D1117">
+<meta name="theme-color" content="#1d4ed8">
 <!-- PWA -->
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Quini Muestristas">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="format-detection" content="telephone=no">
@@ -29,7 +29,7 @@
 <div id="s0" class="scr on">
   <div class="lwrap">
     <div style="font-size:48px">🧦</div>
-    <div style="font-size:22px;font-weight:700;color:var(--am)">Deportivos Quini</div>
+    <div style="font-size:22px;font-weight:800;color:var(--pri)">Deportivos Quini</div>
     <div style="font-size:13px;color:var(--tx2)">Sistema de Muestristas</div>
     <div id="fb-st" style="font-size:11px;color:var(--tx3)">Conectando…</div>
     <div class="lcard">
@@ -108,7 +108,7 @@
         </select>
         <div class="card" style="margin:0;padding:10px;text-align:center">
           <div style="font-size:10px;color:var(--tx2)">Total</div>
-          <div style="font-size:22px;font-weight:700;color:var(--am)" id="mhc">—</div>
+          <div style="font-size:22px;font-weight:700;color:var(--pri)" id="mhc">—</div>
         </div>
       </div>
       <div id="mhl"></div>
@@ -213,11 +213,12 @@
         <select class="fi" id="dw" onchange="loadDB()"><option value="all">Todos</option><option value="israel">Israel</option><option value="jesus">Jesús</option></select>
       </div>
       <div class="g2" style="gap:8px;margin-bottom:12px">
-        <div class="card am" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">Completadas</div><div style="font-size:24px;font-weight:700;color:var(--am)" id="db0">—</div></div>
+        <div class="card" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">Completadas</div><div style="font-size:24px;font-weight:700;color:var(--pri)" id="db0">—</div></div>
         <div class="card gn" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TEN promedio</div><div style="font-size:24px;font-weight:700;color:var(--gn)" id="db1">—</div></div>
         <div class="card bl" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">IPP 1ª pasada</div><div style="font-size:24px;font-weight:700;color:var(--bl)" id="db2">—</div></div>
         <div class="card" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TM total (min)</div><div style="font-size:24px;font-weight:700" id="db3">—</div></div>
       </div>
+      <div id="db-cmp"></div>
       <button class="btn btn-bl btn-sm" style="margin-bottom:12px" onclick="exportCSV()">📥 Exportar historial a CSV</button>
       <div class="stitle">Historial</div>
       <div id="db-list"></div>
@@ -317,6 +318,18 @@
     <div class="fg" id="cp-admin-wrap"><label class="fl">PIN de admin (Lety) para confirmar</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-admin" placeholder="••••••"></div>
     <button class="btn btn-am" onclick="savePin()">✓ Guardar PIN</button>
     <button class="btn btn-gh" onclick="closeOvl('ocp')">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL: ÉXITO (firma/aprobación) — solo se cierra con el botón -->
+<div class="ovl" id="oex" role="dialog" aria-modal="true" aria-labelledby="ex-title">
+  <div class="msheet">
+    <div class="exito">
+      <div class="check">✓</div>
+      <div class="et" id="ex-title">Listo</div>
+      <div class="ef" id="ex-folio"></div>
+      <button class="btn btn-am" id="ex-ok" onclick="closeOvl('oex')">Listo</button>
+    </div>
   </div>
 </div>
 

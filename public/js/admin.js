@@ -115,7 +115,7 @@ function renderRevCard(id, d) {
   return `<div class="card am">
     <div class="dt">${es(d.modelo)} · <span class="vcod">${es(d.codigo_variante)}</span>${(d.iter || 1) > 1 ? ` <span class="bge bpend">iter ${es(d.iter)}</span>` : ''}</div>
     <div class="ds">${(USERS[d.id_muestrista] || {}).nombre || es(d.id_muestrista)} · ${es(d.descripcion_variante)}</div>
-    <div class="mr"><span>OT ${es(d.ot)}</span><span>${fmtDate(d.dt_fin)}</span></div>
+    <div class="mr"><span>${d.folio ? es(d.folio) + ' · ' : ''}OT ${es(d.ot)}</span><span>${fmtDate(d.dt_fin)}</span></div>
     <button class="btn btn-am btn-sm" style="margin-top:10px;width:100%" data-rev="${es(id)}">📋 Ver y firmar</button>
   </div>`;
 }
@@ -128,6 +128,7 @@ export async function openRev(capturaId, readOnly = false) {
     const snap = await db.collection('capturas').doc(capturaId).get();
     const d = snap.data();
     if (!d) { toast('Ficha no encontrada', false); return; }
+    APP.revFolio = d.folio || null; // para la pantalla de éxito al aprobar
     document.getElementById('rtitle').textContent = readOnly ? 'Ficha aprobada' : 'Revisar ficha práctica';
     // TEN calculado desde Firestore, no desde timers en memoria
     const tn = tenFromDoc(d);
@@ -143,7 +144,7 @@ export async function openRev(capturaId, readOnly = false) {
       <div class="card ${readOnly ? 'gn' : 'bl'}">
         <div class="dt">${es(d.modelo)} · <span class="vcod">${es(d.codigo_variante)}</span>${(d.iter || 1) > 1 ? ` <span class="bge bpend">iter ${es(d.iter)}</span>` : ''}</div>
         <div class="ds">${es(d.descripcion_variante)} · ${es(d.tipo_pack)}</div>
-        <div class="mr"><span>${(USERS[d.id_muestrista] || {}).nombre || es(d.id_muestrista)}</span><span>OT ${es(d.ot)} · PO ${es(d.po)}</span></div>
+        <div class="mr"><span>${(USERS[d.id_muestrista] || {}).nombre || es(d.id_muestrista)}</span><span>${d.folio ? es(d.folio) + ' · ' : ''}OT ${es(d.ot)} · PO ${es(d.po)}</span></div>
         <div class="mr"><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn)}</strong></span><span>TM: <span style="color:var(--rd)">${fmtMin(d.tm_seg || 0)}</span></span></div>
         <div class="mr"><span>Bruto: ${fmtMin(d.elapsed_seg || 0)}</span><span>${fmtDate(d.dt_fin)}</span></div>
       </div>
@@ -185,8 +186,8 @@ export async function openRev(capturaId, readOnly = false) {
         <div style="font-size:13px"><label class="fl">Pares producidos</label>${es(d.pares) || '—'} de ${es(d.pares_requeridos) || '—'} requeridos</div>
       </div>
       ${d.obs ? `<div class="fsec"><div class="ftitle">Observaciones</div><div style="font-size:13px">${es(d.obs)}</div></div>` : ''}
-      ${esFirmaValida(d.firma_m) ? `<div class="fsec"><div class="ftitle">Firma muestrista</div><img src="${es(d.firma_m)}" alt="Firma muestrista" style="max-width:100%;border-radius:var(--r);border:1px solid var(--b2)"></div>` : ''}
-      ${readOnly && esFirmaValida(d.firma_l) ? `<div class="fsec"><div class="ftitle">Firma de aprobación (Lety)</div><img src="${es(d.firma_l)}" alt="Firma Lety" style="max-width:100%;border-radius:var(--r);border:1px solid var(--b2)"></div>` : ''}
+      ${esFirmaValida(d.firma_m) ? `<div class="fsec"><div class="ftitle">Firma muestrista</div><img src="${es(d.firma_m)}" alt="Firma muestrista" class="firma-img"></div>` : ''}
+      ${readOnly && esFirmaValida(d.firma_l) ? `<div class="fsec"><div class="ftitle">Firma de aprobación (Lety)</div><img src="${es(d.firma_l)}" alt="Firma Lety" class="firma-img"></div>` : ''}
       ${readOnly
         ? `<button class="btn btn-bl" onclick="reabrirFicha()">🔓 Reabrir ficha (volver a pendiente)</button>`
         : `<div class="brow">

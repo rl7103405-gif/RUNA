@@ -8,8 +8,9 @@ rules_version = '2';
 // no pueden distinguir usuarios; lo que sí hacen es:
 //   1. Reemplazar el "modo prueba" que vence a los 30 días (sin estas
 //      reglas, la app dejaría de funcionar al vencer).
-//   2. Limitar el acceso EXCLUSIVAMENTE a las 4 colecciones de la app —
-//      cualquier otra colección queda bloqueada.
+//   2. Limitar el acceso EXCLUSIVAMENTE a las 5 colecciones de la app
+//      (desarrollos, capturas, pines, _ping, contadores) — cualquier otra
+//      colección queda bloqueada.
 //   3. Validar la forma de los datos (tipos, estados válidos, formato de
 //      PIN, usuarios conocidos, firmas PNG bien formadas, tiempos
 //      coherentes) para que un cliente con errores o un tercero no pueda
@@ -85,12 +86,22 @@ service cloud.firestore {
                     && request.resource.data.estado == 'activo'
                     && tiemposOk(request.resource.data)
                     && firmaOk(request.resource.data, 'firma_m')
-                    && firmaOk(request.resource.data, 'firma_l');
+                    && firmaOk(request.resource.data, 'firma_l')
+                    // Folio consecutivo obligatorio, amarrado al contador que
+                    // la MISMA transacción deja actualizado (getAfter)
+                    && request.resource.data.folio is string
+                    && request.resource.data.folio.matches('^FP-[0-9]{5,}$')
+                    && request.resource.data.folio_seq is int
+                    && request.resource.data.folio_seq > 0
+                    && getAfter(/databases/$(database)/documents/contadores/capturas).data.seq == request.resource.data.folio_seq;
       allow update: if estadoCapturaValido(request.resource.data.estado)
                     // El dueño, el desarrollo de origen y la variante no se reasignan
                     && request.resource.data.id_muestrista == resource.data.id_muestrista
                     && request.resource.data.id_desarrollo == resource.data.id_desarrollo
                     && request.resource.data.get('codigo_variante', '') == resource.data.get('codigo_variante', '')
+                    // El folio no se puede cambiar ni borrar una vez asignado
+                    && request.resource.data.get('folio', '') == resource.data.get('folio', '')
+                    && request.resource.data.get('folio_seq', 0) == resource.data.get('folio_seq', 0)
                     && tiemposOk(request.resource.data)
                     && firmaOk(request.resource.data, 'firma_m')
                     && firmaOk(request.resource.data, 'firma_l')
@@ -122,6 +133,21 @@ service cloud.firestore {
                    && request.resource.data.keys().hasOnly(['pin'])
                    && request.resource.data.pin is string
                    && request.resource.data.pin.matches('^[0-9]{6}$');
+    }
+
+    // ── contadores: folios consecutivos (doc 'capturas' = { seq }) ──
+    // Solo se acepta el siguiente consecutivo exacto: sin saltos ni retrocesos
+    match /contadores/{docId} {
+      allow read: if true;
+      allow create: if docId == 'capturas'
+                    && request.resource.data.keys().hasOnly(['seq'])
+                    && request.resource.data.seq is int
+                    && request.resource.data.seq == 1;
+      allow update: if docId == 'capturas'
+                    && request.resource.data.keys().hasOnly(['seq'])
+                    && request.resource.data.seq is int
+                    && request.resource.data.seq == resource.data.seq + 1;
+      allow delete: if false;
     }
 
     // ── _ping: test de conectividad (write de prueba al arrancar) ──

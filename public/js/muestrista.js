@@ -260,7 +260,7 @@ export async function loadMHist() {
               <span style="font-size:13px;font-weight:600;flex:1">${es(dt.modelo)}</span>
               <span class="bge ${dt.estado === 'aprobado' ? 'bok' : 'bpend'}">${dt.estado === 'aprobado' ? '✅' : '🔄'}</span>
             </div>
-            <div class="mr"><span>${fmtDate(dt.dt_fin)}</span><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn)}</strong></span></div>
+            <div class="mr"><span>${dt.folio ? es(dt.folio) + ' · ' : ''}${fmtDate(dt.dt_fin)}</span><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn)}</strong></span></div>
           </div>`;
         }).join('');
   } catch (e) {

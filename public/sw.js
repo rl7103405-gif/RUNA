@@ -1,6 +1,6 @@
 // Service worker: la interfaz (app shell) carga offline; los datos de
 // Firestore siguen necesitando red y NO se interceptan.
-const CACHE = 'quini-muestristas-v2';
+const CACHE = 'quini-muestristas-v3';
 
 const APP_SHELL = [
   './',

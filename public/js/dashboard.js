@@ -11,6 +11,8 @@ export async function loadDB() {
   if (!fsOk()) return;
   const seq = ++loadSeq;
   APP.dbDocs = []; // el CSV nunca exporta datos de un filtro anterior
+  const cmpEl = document.getElementById('db-cmp');
+  if (cmpEl) cmpEl.innerHTML = ''; // sin barras del filtro anterior
   try {
     const period = document.getElementById('dp')?.value || 'month';
     const who = document.getElementById('dw')?.value || 'all';
@@ -53,15 +55,55 @@ export async function loadDB() {
               <span style="font-size:13px;font-weight:600;flex:1">${es(dt.modelo)}</span>
               ${badge}
             </div>
-            <div class="mr"><span>${(USERS[dt.id_muestrista] || {}).nombre || es(dt.id_muestrista)}</span><span>${fmtDate(dt.dt_fin)}</span></div>
+            <div class="mr"><span>${dt.folio ? es(dt.folio) + ' · ' : ''}${(USERS[dt.id_muestrista] || {}).nombre || es(dt.id_muestrista)}</span><span>${fmtDate(dt.dt_fin)}</span></div>
             <div class="mr"><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn)}</strong></span><span>TM: <span style="color:var(--rd)">${fmtMin(dt.tm_seg || 0)}</span></span></div>
             ${dt.estado === 'aprobado' ? `<button class="btn btn-bl btn-sm" style="margin-top:8px;width:100%" data-view="${es(d.id)}">👁 Ver ficha aprobada</button>` : ''}
           </div>`;
         }).join('');
+    renderBarras(cmpEl, who, docs, aprob);
   } catch (e) {
     console.error('Dashboard error:', e);
     if (seq === loadSeq) toast('Error cargando el dashboard — revisa tu conexión', false);
   }
+}
+
+// ── Barras de comparación ──
+function barra(label, valTxt, frac, color) {
+  const w = Math.max(0, Math.min(100, Math.round(frac * 100)));
+  return `<div class="cmp"><span class="cl">${es(label)}</span><div class="ct"><div class="cb" style="width:${w}%;background:${color}"></div></div><span class="cv">${es(valTxt)}</span></div>`;
+}
+
+// Comparación descriptiva (no ranking): TEN solo sobre aprobadas y solo con
+// el filtro "Todos"; TM por causa sobre el mismo universo que "TM total"
+function renderBarras(cmpEl, who, docs, aprob) {
+  if (!cmpEl) return;
+  let html = '';
+  if (who === 'all') {
+    const series = Object.keys(USERS).filter(u => USERS[u].rol === 'muestrista').map(uid => {
+      const de = aprob.filter(d => d.data().id_muestrista === uid);
+      const avg = de.length ? de.reduce((a, d) => a + tenFromDoc(d.data()), 0) / de.length / 60 : 0;
+      return { label: USERS[uid].nombre, n: de.length, val: Math.round(avg) };
+    }).filter(s => s.n > 0).sort((a, b) => b.val - a.val);
+    const max = Math.max(0, ...series.map(s => s.val));
+    if (series.length > 0 && max > 0) {
+      html += '<div class="stitle" style="margin-top:8px">TEN promedio por muestrista (aprobadas)</div>'
+        + series.map(s => barra(s.label, s.val + 'm · ' + s.n + (s.n === 1 ? ' ficha' : ' fichas'), s.val / max, 'var(--gn-full)')).join('');
+    }
+  }
+  const porCausa = {};
+  docs.forEach(d => Object.entries(d.data().tm_causas || {}).forEach(([c, s]) => {
+    if (typeof s === 'number' && s > 0) porCausa[c] = (porCausa[c] || 0) + s;
+  }));
+  const causas = Object.entries(porCausa).map(([cid, s]) => {
+    const c = TM_CAUSES.find(x => x.id === cid);
+    return { label: c ? c.label : cid, raw: s, val: Math.round(s / 60) };
+  }).filter(x => x.raw > 0).sort((a, b) => b.raw - a.raw);
+  const maxRaw = Math.max(0, ...causas.map(c => c.raw));
+  if (causas.length > 0 && maxRaw > 0) {
+    html += '<div class="stitle" style="margin-top:8px">TM por causa — minutos del período</div>'
+      + causas.map(c => barra(c.label, c.val + 'm', c.raw / maxRaw, 'var(--rd-full)')).join('');
+  }
+  cmpEl.innerHTML = html;
 }
 
 // ── Exportar historial a CSV ──
@@ -73,13 +115,13 @@ function csvCell(v) {
 // Campos de texto libre: neutralizar inicio de fórmula para Excel
 function txt(v) {
   const s = String(v ?? '');
-  return /^[\s]*[=+\-@\t\r]/.test(s) ? "'" + s : s;
+  return /^\s*[=+\-@\t\r]/.test(s) ? "'" + s : s;
 }
 
 export function exportCSV() {
   const docs = APP.dbDocs || [];
   if (docs.length === 0) { toast('No hay datos en el período seleccionado', false); return; }
-  const header = ['fecha_fin', 'muestrista', 'estado', 'iteracion', 'ot', 'po', 'modelo', 'cliente', 'tipo_producto',
+  const header = ['folio', 'fecha_fin', 'muestrista', 'estado', 'iteracion', 'ot', 'po', 'modelo', 'cliente', 'tipo_producto',
     'codigo_variante', 'descripcion', 'tipo_pack', 'pares_producidos', 'pares_requeridos',
     'bruto_min', 'tm_min', 'tm_penalizable_min', 'ten_min', 'maquina_marca', 'maquina_numero',
     't_ciclo_min', 't_ciclo_seg', 'peso_salida_g', 'peso_cerrado_g',
@@ -95,7 +137,7 @@ export function exportCSV() {
     const tc = dt.tm_causas || {};
     const fin = dt.dt_fin && dt.dt_fin.toDate ? dt.dt_fin.toDate().toISOString() : '';
     const bruto = dt.elapsed_seg || 0, tm = dt.tm_seg || 0;
-    return [fin, (USERS[dt.id_muestrista] || {}).nombre || dt.id_muestrista, dt.estado, Number(dt.iter) || 1,
+    return [txt(dt.folio), fin, (USERS[dt.id_muestrista] || {}).nombre || dt.id_muestrista, dt.estado, Number(dt.iter) || 1,
       txt(dt.ot), txt(dt.po), txt(dt.modelo), txt(dt.cliente), txt(dt.tipo_producto),
       txt(dt.codigo_variante), txt(dt.descripcion_variante), txt(dt.tipo_pack), txt(dt.pares), txt(dt.pares_requeridos),
       (bruto / 60).toFixed(1), (tm / 60).toFixed(1),

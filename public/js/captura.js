@@ -76,28 +76,38 @@ async function createCap(devId, cod) {
       toast('Ya existe una captura en curso para esta variante', false);
       return;
     }
-    // Batch: la captura y el cambio de estado del desarrollo van juntos
-    const ref = db.collection('capturas').doc();
-    const batch = db.batch();
-    batch.set(ref, {
-      id_desarrollo: devId, id_muestrista: APP.user.id,
-      codigo_variante: cod, descripcion_variante: v.descripcion || '',
-      pares_requeridos: v.pares_requeridos || '', tipo_pack: v.tipo_pack || '',
-      modelo: dd.modelo, cliente: dd.cliente, ot: dd.ot, po: dd.po, tipo_producto: dd.tipo_producto || '',
-      estado: 'activo', elapsed_seg: 0, tm_seg: 0, tm_causas: {},
-      dt_inicio: firebase.firestore.FieldValue.serverTimestamp(),
-      maquina_marca: '', maquina_numero: '',
-      med_sh: { A: '', B: '', C: '', D: '', E: '' }, med_h: { A: '', B: '', C: '', D: '', E: '' },
-      t_ciclo_min: '', t_ciclo_seg: '', peso_sal: '', peso_cer: '',
-      giros: { el: '', tb: '', pl: '', rb: '' }, vels: { el: '', tb: '', tp: '', pl: '' },
-      pto: { d1: '', d2: '', sk: '' }, pares: '', obs: '',
-      firma_m: null, firma_l: null, iter: 1,
+    // Transacción: folio consecutivo (contadores/capturas) + creación de la
+    // captura + cambio de estado del desarrollo, todo atómico. Las refs se
+    // crean FUERA del callback; el callback solo lee/calcula/escribe (puede
+    // reintentarse si otro dispositivo incrementa el contador a la vez).
+    const counterRef = db.collection('contadores').doc('capturas');
+    const capRef = db.collection('capturas').doc();
+    const devRef = db.collection('desarrollos').doc(devId);
+    await db.runTransaction(async tx => {
+      const cSnap = await tx.get(counterRef);
+      const prev = cSnap.exists && typeof cSnap.data().seq === 'number' ? Math.floor(cSnap.data().seq) : 0;
+      const seq = prev + 1;
+      tx.set(counterRef, { seq });
+      tx.set(capRef, {
+        folio: 'FP-' + String(seq).padStart(5, '0'), folio_seq: seq,
+        id_desarrollo: devId, id_muestrista: APP.user.id,
+        codigo_variante: cod, descripcion_variante: v.descripcion || '',
+        pares_requeridos: v.pares_requeridos || '', tipo_pack: v.tipo_pack || '',
+        modelo: dd.modelo, cliente: dd.cliente, ot: dd.ot, po: dd.po, tipo_producto: dd.tipo_producto || '',
+        estado: 'activo', elapsed_seg: 0, tm_seg: 0, tm_causas: {},
+        dt_inicio: firebase.firestore.FieldValue.serverTimestamp(),
+        maquina_marca: '', maquina_numero: '',
+        med_sh: { A: '', B: '', C: '', D: '', E: '' }, med_h: { A: '', B: '', C: '', D: '', E: '' },
+        t_ciclo_min: '', t_ciclo_seg: '', peso_sal: '', peso_cer: '',
+        giros: { el: '', tb: '', pl: '', rb: '' }, vels: { el: '', tb: '', tp: '', pl: '' },
+        pto: { d1: '', d2: '', sk: '' }, pares: '', obs: '',
+        firma_m: null, firma_l: null, iter: 1,
+      });
+      tx.update(devRef, { estado: 'en_proceso' });
     });
-    batch.update(db.collection('desarrollos').doc(devId), { estado: 'en_proceso' });
-    await batch.commit();
-    getT(ref.id);
-    startT(ref.id);
-    await openCap(ref.id);
+    getT(capRef.id);
+    startT(capRef.id);
+    await openCap(capRef.id);
   } catch (e) { console.error(e); toast('Error iniciando captura', false); }
   finally { createBusy = false; }
 }
@@ -131,12 +141,14 @@ export async function openCap(capturaId) {
     const snap = await db.collection('capturas').doc(capturaId).get();
     const d = snap.data();
     if (!d) { toast('Captura no encontrada', false); return; }
+    APP.activeCapFolio = d.folio || null;
     const t = timers[capturaId] || { running: false, tmActive: false };
     const tmCauseDef = t.tmActive ? TM_CAUSES.find(c => c.id === t.cause) : null;
     const tmMsg = tmCauseDef && tmCauseDef.pen
       ? 'TM en curso — este TM sí cuenta en tu TEN'
       : 'TM en curso — el TEN está pausado';
-    document.getElementById('ct').textContent = (d.modelo || '') + ' · ' + (d.descripcion_variante || '');
+    document.getElementById('ct').textContent =
+      (d.folio ? d.folio + ' · ' : '') + (d.modelo || '') + ' · ' + (d.descripcion_variante || '');
     document.getElementById('cc').textContent = d.codigo_variante || '';
     const sh = d.med_sh || {}, mh = d.med_h || {}, gi = d.giros || {}, vl = d.vels || {}, pt = d.pto || {};
     document.getElementById('cbody').innerHTML = `
@@ -251,6 +263,7 @@ export function backCaptura() {
   const leave = () => {
     APP.capDirty = false;
     APP.activeCap = null;
+    APP.activeCapFolio = null;
     scr(APP.user && APP.user.rol === 'lety' ? 'sL' : 'sM');
   };
   if (APP.capDirty) {

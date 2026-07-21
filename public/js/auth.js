@@ -94,6 +94,7 @@ export function logout() {
   APP.tareasSnap = [];
   APP.dbDocs = [];
   APP.activeCap = null;
+  APP.activeCapFolio = null;
   scr('s0');
 }
 

@@ -57,6 +57,15 @@ export function confirmDlg(title, msg, okLabel, onOk) {
   openOvl('ocf');
 }
 
+// Pantalla de éxito (check verde). Navegar PRIMERO a la pantalla destino y
+// luego llamar esto; el overlay solo se cierra con el botón "Listo"
+export function showExito(titulo, folio) {
+  document.getElementById('ex-title').textContent = titulo;
+  document.getElementById('ex-folio').textContent = folio || '';
+  openOvl('oex');
+  setTimeout(() => document.getElementById('ex-ok')?.focus(), 60);
+}
+
 // ── TM penalizable y TEN desde datos persistidos ──
 const PEN_IDS = new Set(TM_CAUSES.filter(c => c.pen).map(c => c.id));
 

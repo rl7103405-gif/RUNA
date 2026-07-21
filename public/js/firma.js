@@ -1,7 +1,7 @@
 // Firma digital en canvas (touch + mouse)
 import { db, fsOk } from './fb.js';
 import { APP } from './state.js';
-import { scr, toast } from './utils.js';
+import { scr, toast, showExito } from './utils.js';
 import { elapsedOf, tmOf, causesOf, pauseT, startT, endTM, dropTimer } from './timers.js';
 
 let sigDrw = false, sigCtxObj = null;
@@ -13,6 +13,13 @@ export function showFirma() {
   setTimeout(initSig, 80);
 }
 
+// El lienzo se rellena de blanco opaco: así la firma guardada se ve bien
+// sobre cualquier fondo (las firmas viejas eran transparentes)
+function fillBlanco(cv, ctx) {
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+}
+
 function initSig() {
   const cv = document.getElementById('sig-cv');
   if (!cv) return;
@@ -22,11 +29,11 @@ function initSig() {
   cv.height = Math.round(200 * dpr) || 200;
   cv.style.height = '200px';
   sigCtxObj = cv.getContext('2d');
-  sigCtxObj.strokeStyle = '#F5A623';
+  fillBlanco(cv, sigCtxObj);
+  sigCtxObj.strokeStyle = '#1e40af';
   sigCtxObj.lineWidth = 3 * dpr;
   sigCtxObj.lineCap = 'round';
   sigCtxObj.lineJoin = 'round';
-  sigCtxObj.clearRect(0, 0, cv.width, cv.height);
   function xy(e) {
     const r = cv.getBoundingClientRect(), s = e.touches ? e.touches[0] : e;
     const sx = cv.width / r.width, sy = cv.height / r.height;
@@ -42,21 +49,26 @@ function initSig() {
 
 export function clearSig() {
   const cv = document.getElementById('sig-cv');
-  if (cv && sigCtxObj) sigCtxObj.clearRect(0, 0, cv.width, cv.height);
+  if (cv && sigCtxObj) fillBlanco(cv, sigCtxObj);
 }
 
 let savingSig = false;
 
 export async function saveSig() {
   if (!fsOk() || savingSig) return;
+  if (!sigCtxObj) { toast('Espera un momento — preparando el lienzo', false); return; }
   const cv = document.getElementById('sig-cv');
   const px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
-  if (!px.some(v => v !== 0)) { toast('Dibuja tu firma primero', false); return; }
+  // Con fondo blanco opaco, un lienzo sin trazo tiene todos los canales en 255
+  if (!px.some(v => v !== 255)) { toast('Dibuja tu firma primero', false); return; }
   const url = cv.toDataURL('image/png');
   const { capturaId, who } = APP.sigData;
   savingSig = true;
   try {
     if (who === 'muestrista') {
+      // Folio ANTES de limpiar estado (para la pantalla de éxito): primero el
+      // valor fresco guardado por openCap, con el listener como respaldo
+      const folio = APP.activeCapFolio || (((APP.allCaps || []).find(c => c.id === capturaId) || {}).data || {}).folio;
       // Si quedó un TM abierto, se cierra aquí para que su causa quede
       // registrada en tm_causas antes de congelar los tiempos
       endTM(capturaId);
@@ -73,8 +85,8 @@ export async function saveSig() {
       APP.activasSnap = (APP.activasSnap || []).filter(d => d.id !== capturaId);
       APP.activeCap = null;
       APP.sigData = null;
-      toast('✅ Ficha firmada — pendiente de Lety');
       scr('sM');
+      showExito('Ficha firmada — pendiente de Lety', folio || 'Ficha anterior · sin folio');
     } else {
       // Transacción: solo se aprueba si la ficha SIGUE pendiente (evita
       // aprobar desde una pantalla vieja una ficha que ya cambió de estado)
@@ -87,18 +99,24 @@ export async function saveSig() {
         tx.update(ref, { firma_l: url, estado: 'aprobado' });
       });
       APP.sigData = null;
-      toast('✅ Ficha aprobada');
       scr('sL');
-      const { loadRev } = await import('./admin.js');
-      loadRev();
+      showExito('Ficha aprobada', APP.revFolio || 'Ficha anterior · sin folio');
+      // El refresco de listas va aparte: si falla, la aprobación YA quedó
+      // guardada y no debe reportarse como error de firma
+      try {
+        const { loadRev } = await import('./admin.js');
+        loadRev();
+      } catch (e2) { console.error(e2); }
     }
   } catch (e) {
     console.error(e);
     if (e && e.message === 'estado-cambiado') {
       toast('La ficha cambió de estado — revisa la lista de pendientes', false);
       scr('sL');
-      const { loadRev } = await import('./admin.js');
-      loadRev();
+      try {
+        const { loadRev } = await import('./admin.js');
+        loadRev();
+      } catch (e2) { console.error(e2); }
     } else {
       toast('Error guardando firma', false);
     }
