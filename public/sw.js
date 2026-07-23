@@ -1,6 +1,9 @@
 // Service worker: la interfaz (app shell) carga offline; los datos de
 // Firestore siguen necesitando red y NO se interceptan.
-const CACHE = 'quini-muestristas-v3';
+// v4: login pasa de PIN-en-Firestore a Firebase Auth real — se sube la
+// versión para que los 3 dispositivos descarten el app-shell viejo en vez
+// de servirlo cacheado (ver auth.js/fb.js nuevos).
+const CACHE = 'quini-muestristas-v4';
 
 const APP_SHELL = [
   './',
@@ -27,6 +30,7 @@ const APP_SHELL = [
 // CDN necesarios para que la app arranque offline (se cachean best-effort)
 const CDN_ASSETS = [
   'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js',
 ];
 

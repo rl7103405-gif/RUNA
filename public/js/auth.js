@@ -1,26 +1,11 @@
-// Login con PIN + cambio de PINs
-import { db, fsOk } from './fb.js';
-import { APP, USERS, DEF_PINS } from './state.js';
+// Login con PIN (= contraseña de la cuenta de Firebase Auth del empleado) +
+// cambio del PIN propio.
+import { db, auth, fsOk } from './fb.js';
+import { APP, USERS, EMPLEADO_EMAIL } from './state.js';
 import { scr, toast, gv, openOvl, closeOvl } from './utils.js';
 import { clearAllTimers } from './timers.js';
 import { initMuestrista } from './muestrista.js';
 import { initLety } from './admin.js';
-
-// Devuelve true (PIN correcto), false (PIN incorrecto) o null (no se pudo
-// verificar). Falla cerrado: sin conexión NUNCA se acepta el PIN de fábrica —
-// el fallback a DEF_PINS aplica solo cuando Firestore confirma que el doc
-// del PIN aún no existe (primer uso).
-export async function verifyPIN(uid, pin) {
-  if (!db) return null;
-  try {
-    const doc = await db.collection('pines').doc(uid).get();
-    if (!doc.exists) return pin === DEF_PINS[uid];
-    return doc.data().pin === pin;
-  } catch (e) {
-    console.error('verifyPIN:', e);
-    return null;
-  }
-}
 
 export function selectUser(uid) {
   APP.pinTarget = uid;
@@ -51,35 +36,70 @@ function updateDots() {
   }
 }
 
+function mensajeError(code) {
+  switch (code) {
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+    case 'auth/invalid-login-credentials':
+    case 'auth/user-not-found':
+      return 'PIN incorrecto, intenta de nuevo';
+    case 'auth/too-many-requests':
+      return 'Demasiados intentos — espera unos minutos e intenta de nuevo';
+    case 'auth/user-disabled':
+      return 'Esta cuenta está deshabilitada, contacta a Lety';
+    case 'auth/network-request-failed':
+      return 'Sin conexión — no se pudo verificar el PIN';
+    default:
+      return 'No se pudo iniciar sesión, intenta de nuevo';
+  }
+}
+
+function mostrarError(uid, texto) {
+  if (APP.pinTarget !== uid) return; // cambió de usuario a media verificación
+  document.getElementById('pin-err').textContent = texto;
+  const wrap = document.getElementById('pin-dots-wrap');
+  wrap.classList.add('shake');
+  setTimeout(() => wrap.classList.remove('shake'), 400);
+  APP.pinBuf = []; updateDots();
+}
+
 async function submitPin() {
   if (checkingPin) return;
   checkingPin = true;
   // Se fija el usuario ANTES del await: si alguien cambia de usuario mientras
-  // Firestore responde, la verificación vieja no puede abrir la sesión nueva
+  // Firebase responde, el resultado viejo no puede abrir la sesión nueva
   const uid = APP.pinTarget;
   const pin = APP.pinBuf.join('');
   try {
-    const ok = await verifyPIN(uid, pin);
-    if (APP.pinTarget !== uid) return; // cambió de usuario a media verificación
-    if (ok === true) {
-      login(uid);
-    } else {
-      document.getElementById('pin-err').textContent = ok === null
-        ? 'Sin conexión — no se pudo verificar el PIN'
-        : 'PIN incorrecto, intenta de nuevo';
-      const wrap = document.getElementById('pin-dots-wrap');
-      wrap.classList.add('shake');
-      setTimeout(() => wrap.classList.remove('shake'), 400);
-      APP.pinBuf = []; updateDots();
+    if (!auth) {
+      mostrarError(uid, 'Firebase no está listo, espera un momento');
+      return;
     }
+    await auth.signInWithEmailAndPassword(EMPLEADO_EMAIL[uid], pin);
+    if (APP.pinTarget !== uid) { await auth.signOut().catch(() => {}); return; }
+    // Confirma que la cuenta que acaba de iniciar sesión está mapeada al
+    // empleado esperado (usuarios/{uid}, solo-lectura — ver firestore.rules).
+    // Si no coincide, es un error de configuración (cuenta mal creada), no
+    // un PIN incorrecto: se avisa distinto para no confundir al operador.
+    const perfil = await db.collection('usuarios').doc(auth.currentUser.uid).get();
+    if (!perfil.exists || perfil.data().empleadoId !== uid) {
+      console.error('usuarios/{uid} no coincide con el empleado esperado:', uid, perfil.data());
+      await auth.signOut().catch(() => {});
+      mostrarError(uid, 'Cuenta mal configurada — avisa a Roberto');
+      return;
+    }
+    login(uid, perfil.data().rol);
+  } catch (e) {
+    console.error('login:', e);
+    mostrarError(uid, mensajeError(e.code));
   } finally {
     checkingPin = false;
   }
 }
 
-export function login(uid) {
+export function login(uid, rol) {
   APP.user = { id: uid, ...USERS[uid] };
-  if (uid === 'lety') { initLety(); scr('sL'); }
+  if (rol === 'admin') { initLety(); scr('sL'); }
   else { initMuestrista(); scr('sM'); }
 }
 
@@ -95,23 +115,22 @@ export function logout() {
   APP.dbDocs = [];
   APP.activeCap = null;
   APP.activeCapFolio = null;
+  if (auth) auth.signOut().catch(() => {});
   scr('s0');
 }
 
-// ── Cambio de PIN ──
-export function openChangePin(uid) {
-  APP.changePinUid = uid;
-  const u = USERS[uid];
-  document.getElementById('cp-who-label').textContent = 'Cambiando PIN de: ' + u.ico + ' ' + u.nombre;
-  ['cp-new', 'cp-confirm', 'cp-admin'].forEach(id => document.getElementById(id).value = '');
-  openOvl('ocp');
-}
-
+// ── Cambio de PIN propio ──
+// Ya no existe "admin cambia el PIN de otro usuario": Firebase Auth no
+// permite cambiar la contraseña de OTRA cuenta desde el cliente sin el
+// Admin SDK. Si alguien olvida su PIN, se restablece desde Firebase Console
+// (Authentication → usuario → Restablecer contraseña).
 export function openChangePinSelf() {
-  APP.changePinUid = APP.user.id;
   const u = USERS[APP.user.id];
   document.getElementById('cp-who-label').textContent = 'Cambiando tu PIN: ' + u.ico + ' ' + u.nombre;
-  ['cp-new', 'cp-confirm', 'cp-admin'].forEach(id => document.getElementById(id).value = '');
+  ['cp-old', 'cp-new', 'cp-confirm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
   openOvl('ocp');
 }
 
@@ -119,28 +138,27 @@ let savingPin = false;
 
 export async function savePin() {
   if (savingPin) return;
+  const oldPin = gv('cp-old').trim();
   const newPin = gv('cp-new').trim();
   const confirmPin = gv('cp-confirm').trim();
-  const adminPin = gv('cp-admin').trim();
   if (!/^\d{6}$/.test(newPin)) { toast('El PIN debe ser de 6 dígitos numéricos', false); return; }
   if (newPin !== confirmPin) { toast('Los PINs no coinciden', false); return; }
-  // Se fija el usuario destino ANTES del await: si el diálogo se cierra y
-  // reabre para otro usuario mientras se verifica el PIN de admin, el PIN
-  // nuevo no debe aplicarse al usuario equivocado
-  const targetUid = APP.changePinUid;
+  if (!fsOk() || !auth || !auth.currentUser) { toast('Sin sesión activa', false); return; }
   savingPin = true;
   try {
-    // Cualquier cambio de PIN se confirma con el PIN de admin (Lety)
-    const adminOk = await verifyPIN('lety', adminPin);
-    if (adminOk === null) { toast('Sin conexión — no se pudo verificar el PIN de admin', false); return; }
-    if (adminOk !== true) { toast('PIN de admin incorrecto', false); return; }
-    if (!fsOk()) return;
-    await db.collection('pines').doc(targetUid).set({ pin: newPin });
+    // Firebase exige una sesión "reciente" para cambiar la contraseña:
+    // se reautentica con el PIN actual antes de aplicar el nuevo.
+    const cred = firebase.auth.EmailAuthProvider.credential(auth.currentUser.email, oldPin);
+    await auth.currentUser.reauthenticateWithCredential(cred);
+    await auth.currentUser.updatePassword(newPin);
     toast('✅ PIN actualizado correctamente');
     closeOvl('ocp');
   } catch (e) {
     console.error(e);
-    toast('Error guardando PIN', false);
+    const msg = (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential')
+      ? 'Tu PIN actual no es correcto'
+      : 'Error guardando PIN';
+    toast(msg, false);
   } finally {
     savingPin = false;
   }

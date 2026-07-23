@@ -2,7 +2,7 @@
 // cablea la delegación de eventos y arranca Firebase + service worker
 import { tryInitFB } from './fb.js';
 import { scr, closeOvl } from './utils.js';
-import { selectUser, numPad, backPin, clearPin, logout, openChangePin, openChangePinSelf, savePin } from './auth.js';
+import { selectUser, numPad, backPin, clearPin, logout, openChangePinSelf, savePin } from './auth.js';
 import { mTab, loadMHist, openTMFor, endTMA, wireMuestristaEvents } from './muestrista.js';
 import { togCapTimer, backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
 import { clearSig, saveSig, backFirma } from './firma.js';
@@ -14,7 +14,7 @@ import { loadDB, exportCSV } from './dashboard.js';
 Object.assign(window, {
   scr, closeOvl,
   selectUser, numPad, backPin, clearPin, logout,
-  openChangePin, openChangePinSelf, savePin,
+  openChangePinSelf, savePin,
   mTab, loadMHist, openTMFor, endTMA,
   togCapTimer, backCaptura, saveDraft, saveAndSign,
   clearSig, saveSig, backFirma,

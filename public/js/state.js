@@ -6,7 +6,14 @@ export const USERS = {
   jesus:  { nombre: 'Jesús',  rol: 'muestrista', ico: '👨‍🔧' },
 };
 
-export const DEF_PINS = { lety: '123456', israel: '000001', jesus: '000002' };
+// El login sigue siendo "elige tu ícono + tu PIN de 6 dígitos", pero el PIN
+// ahora ES la contraseña de la cuenta de Firebase Auth de ese empleado (ver
+// auth.js). El correo es solo un identificador interno, nunca se envía nada.
+export const EMPLEADO_EMAIL = {
+  lety: 'lety@quini-muestristas.local',
+  israel: 'israel@quini-muestristas.local',
+  jesus: 'jesus@quini-muestristas.local',
+};
 
 // ext: causa externa (no es responsabilidad del muestrista)
 // pen: causa que SÍ penaliza — su tiempo cuenta dentro del TEN (spec:

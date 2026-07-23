@@ -3,25 +3,22 @@ rules_version = '2';
 // ═══════════════════════════════════════════════════════════════════════
 // Reglas de producción — Sistema de Muestristas · Deportivos Quini
 //
-// Contexto: la app NO usa Firebase Auth (el login es por PIN de 6 dígitos
-// validado en el cliente contra la colección `pines`). Por eso estas reglas
-// no pueden distinguir usuarios; lo que sí hacen es:
-//   1. Reemplazar el "modo prueba" que vence a los 30 días (sin estas
-//      reglas, la app dejaría de funcionar al vencer).
-//   2. Limitar el acceso EXCLUSIVAMENTE a las 5 colecciones de la app
-//      (desarrollos, capturas, pines, _ping, contadores) — cualquier otra
-//      colección queda bloqueada.
-//   3. Validar la forma de los datos (tipos, estados válidos, formato de
-//      PIN, usuarios conocidos, firmas PNG bien formadas, tiempos
-//      coherentes) para que un cliente con errores o un tercero no pueda
-//      corromper los documentos.
-//   4. Proteger campos sensibles: en `desarrollos` no se pueden reescribir
-//      complejidad/asignación/variantes; una ficha aprobada solo puede
-//      reabrirse (no editarse); los estados firmados exigen su firma.
-//   5. Prohibir borrados: el historial de fichas es un registro de trabajo.
+// Identidad: Firebase Authentication (Email/Password), una cuenta fija por
+// empleado. Cada cuenta se mapea a su rol de negocio vía el documento de
+// SOLO LECTURA usuarios/{authUid} = { empleadoId, rol }, creado una sola vez
+// a mano desde la consola de Firebase — nunca lo escribe el cliente, para
+// que nadie pueda auto-asignarse un rol.
 //
-// Mejora futura (cuando se active el plan Blaze / Firebase Auth): usar
-// Auth anónimo + custom claims para amarrar cada rol a su dispositivo.
+// El login en la app sigue siendo "elige tu ícono + tu PIN de 6 dígitos":
+// el PIN es literalmente la contraseña de esa cuenta de Firebase Auth, así
+// que la verificación ya no pasa por Firestore ni por el cliente — la hace
+// el servidor de Identity Platform de Google (con su propio rate limiting
+// contra fuerza bruta). Antes de esta versión, la identidad se declaraba
+// en el propio payload del cliente (uid en la ruta del documento o en
+// request.resource.data) y no había forma de verificarla — cualquiera con
+// el SDK de Firestore y el apiKey público podía leer/escribir como
+// cualquier usuario. Con request.auth.uid verificado por Google, eso ya
+// no es posible.
 //
 // Despliegue:  firebase deploy --only firestore:rules
 // ═══════════════════════════════════════════════════════════════════════
@@ -29,12 +26,29 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helpers ──
-    function esUsuario(uid) {
-      return uid in ['lety', 'israel', 'jesus'];
+    // ── Identidad ──
+    function autenticado() {
+      return request.auth != null;
     }
-    function esMuestrista(uid) {
-      return uid in ['israel', 'jesus'];
+    function usuarioDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+    function tieneUsuario() {
+      return autenticado() && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+    function miEmpleadoId() {
+      return usuarioDoc().data.empleadoId;
+    }
+    function esAdmin() {
+      return tieneUsuario() && usuarioDoc().data.rol == 'admin';
+    }
+    function esMuestristaActual() {
+      return tieneUsuario() && usuarioDoc().data.rol == 'muestrista';
+    }
+
+    // ── Helpers de datos (validación de forma, igual que antes) ──
+    function esMuestristaId(id) {
+      return id in ['israel', 'jesus'];
     }
     function estadoCapturaValido(e) {
       return e in ['activo', 'pausado', 'pendiente_lety', 'correccion', 'aprobado'];
@@ -58,29 +72,59 @@ service cloud.firestore {
         && (!('tm_causas' in data) || data.tm_causas is map);
     }
 
+    // ── usuarios: mapa authUid -> {empleadoId, rol}. Cada cuenta solo lee
+    // su propio doc; la creación/edición es manual desde la consola.
+    match /usuarios/{authUid} {
+      allow read: if autenticado() && request.auth.uid == authUid;
+      allow write: if false;
+    }
+
     // ── desarrollos: tareas que Lety asigna ──
     match /desarrollos/{devId} {
-      allow read: if true;
-      allow create: if request.resource.data.modelo is string
+      allow read: if tieneUsuario();
+      allow create: if esAdmin()
+                    && request.resource.data.modelo is string
                     && request.resource.data.modelo.size() > 0
-                    && esMuestrista(request.resource.data.asignado_a)
+                    && esMuestristaId(request.resource.data.asignado_a)
                     && estadoDesarrolloValido(request.resource.data.estado)
-                    && request.resource.data.tipo_complejidad in ['A', 'B', 'C']
+                    && !('tipo_complejidad' in request.resource.data)
+                    && existsAfter(/databases/$(database)/documents/desarrollos_privado/$(devId))
                     && request.resource.data.variantes is list
-                    && request.resource.data.variantes.size() > 0;
-      // La app solo cambia `estado`; los campos sensibles son inmutables
-      allow update: if estadoDesarrolloValido(request.resource.data.estado)
+                    && request.resource.data.variantes.size() > 0
+                    && request.resource.data.variante_codigos is list
+                    && request.resource.data.variante_codigos.size() > 0
+                    && request.resource.data.creado_por == miEmpleadoId();
+      // La app solo cambia `estado` (Lety al asignar; el muestrista al
+      // iniciar una captura); los campos sensibles son inmutables para todos.
+      // Además, solo el admin o el muestrista dueño real de la tarea puede
+      // tocarla (mismo patrón que capturas más abajo).
+      allow update: if (esAdmin() || (esMuestristaActual() && miEmpleadoId() == resource.data.asignado_a))
+                    && estadoDesarrolloValido(request.resource.data.estado)
                     && request.resource.data.get('tipo_complejidad', '') == resource.data.get('tipo_complejidad', '')
                     && request.resource.data.get('asignado_a', '') == resource.data.get('asignado_a', '')
                     && request.resource.data.get('variantes', []) == resource.data.get('variantes', [])
+                    && request.resource.data.get('variante_codigos', []) == resource.data.get('variante_codigos', [])
                     && request.resource.data.get('creado_por', '') == resource.data.get('creado_por', '');
       allow delete: if false;
     }
 
+    // ── desarrollos_privado: datos exclusivos de admin (tipo_complejidad).
+    // Documento espejo 1:1 de desarrollos/{devId}, mismo id, creado junto
+    // con el público en el mismo batch (ver admin.js asignar()).
+    match /desarrollos_privado/{devId} {
+      allow read: if esAdmin();
+      allow create: if esAdmin()
+                    && request.resource.data.keys().hasOnly(['tipo_complejidad'])
+                    && request.resource.data.tipo_complejidad in ['A', 'B', 'C']
+                    && existsAfter(/databases/$(database)/documents/desarrollos/$(devId));
+      allow update, delete: if false;
+    }
+
     // ── capturas: fichas prácticas (una por variante) ──
     match /capturas/{capId} {
-      allow read: if true;
-      allow create: if esMuestrista(request.resource.data.id_muestrista)
+      allow read: if tieneUsuario();
+      allow create: if esMuestristaActual()
+                    && request.resource.data.id_muestrista == miEmpleadoId()
                     && request.resource.data.id_desarrollo is string
                     && request.resource.data.codigo_variante is string
                     && request.resource.data.estado == 'activo'
@@ -93,7 +137,19 @@ service cloud.firestore {
                     && request.resource.data.folio.matches('^FP-[0-9]{5,}$')
                     && request.resource.data.folio_seq is int
                     && request.resource.data.folio_seq > 0
-                    && getAfter(/databases/$(database)/documents/contadores/capturas).data.seq == request.resource.data.folio_seq;
+                    && getAfter(/databases/$(database)/documents/contadores/capturas).data.seq == request.resource.data.folio_seq
+                    // Cierra el hueco de atomicidad: exige que el contador
+                    // haya estado exactamente en folio_seq-1 ANTES de esta
+                    // operación (o no existiera, si folio_seq==1) — no basta
+                    // con que el valor final (getAfter) cuadre.
+                    && ((!exists(/databases/$(database)/documents/contadores/capturas) && request.resource.data.folio_seq == 1)
+                        || (exists(/databases/$(database)/documents/contadores/capturas)
+                            && get(/databases/$(database)/documents/contadores/capturas).data.seq == request.resource.data.folio_seq - 1))
+                    // El dueño de la captura debe ser el mismo empleado
+                    // asignado al desarrollo, y la variante debe pertenecer
+                    // realmente a ese desarrollo (evita fichas fraudulentas)
+                    && get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.asignado_a == miEmpleadoId()
+                    && request.resource.data.codigo_variante in get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.variante_codigos;
       allow update: if estadoCapturaValido(request.resource.data.estado)
                     // El dueño, el desarrollo de origen y la variante no se reasignan
                     && request.resource.data.id_muestrista == resource.data.id_muestrista
@@ -108,12 +164,10 @@ service cloud.firestore {
                     // Una ficha aprobada solo puede reabrirse a pendiente_lety
                     && (resource.data.estado != 'aprobado'
                         || request.resource.data.estado == 'pendiente_lety')
-                    // Una ficha firmada (pendiente) solo se aprueba o se rechaza:
-                    // nadie puede seguir editando sus tiempos congelados
+                    // Una ficha firmada (pendiente) solo se aprueba o se rechaza
                     && (resource.data.estado != 'pendiente_lety'
                         || request.resource.data.estado in ['aprobado', 'correccion'])
                     // El estado 'aprobado' solo puede llegar desde 'pendiente_lety'
-                    // (evita saltarse el flujo de firma de Lety)
                     && (request.resource.data.estado != 'aprobado'
                         || resource.data.estado == 'pendiente_lety')
                     // Los estados firmados exigen su firma correspondiente
@@ -121,43 +175,48 @@ service cloud.firestore {
                         || (('firma_m' in request.resource.data) && request.resource.data.firma_m is string))
                     && (request.resource.data.estado != 'aprobado'
                         || (('firma_l' in request.resource.data) && request.resource.data.firma_l is string))
-                    && (request.resource.data.estado != 'aprobado'
-                        || (('firma_m' in request.resource.data) && request.resource.data.firma_m is string));
+                    // Identidad: mientras la ficha está en manos del muestrista
+                    // (activo/pausado/correccion) solo su dueño real la edita;
+                    // en cuanto pasa a manos de Lety (pendiente_lety/aprobado)
+                    // solo el admin puede tocarla (aprobar/rechazar/reabrir).
+                    // Esto es lo que cierra el hallazgo crítico: antes cualquiera
+                    // podía fabricar firma_m/firma_l sin ser el muestrista/admin real.
+                    && (
+                         (esMuestristaActual() && miEmpleadoId() == resource.data.id_muestrista
+                          && resource.data.estado in ['activo', 'pausado', 'correccion'])
+                         || (esAdmin() && resource.data.estado in ['pendiente_lety', 'aprobado'])
+                       );
       allow delete: if false;
-    }
-
-    // ── pines: PIN de acceso por usuario (doc id = uid) ──
-    match /pines/{uid} {
-      allow read: if esUsuario(uid);
-      allow write: if esUsuario(uid)
-                   && request.resource.data.keys().hasOnly(['pin'])
-                   && request.resource.data.pin is string
-                   && request.resource.data.pin.matches('^[0-9]{6}$');
     }
 
     // ── contadores: folios consecutivos (doc 'capturas' = { seq }) ──
     // Solo se acepta el siguiente consecutivo exacto: sin saltos ni retrocesos
     match /contadores/{docId} {
-      allow read: if true;
-      allow create: if docId == 'capturas'
+      allow read: if tieneUsuario();
+      allow create: if tieneUsuario()
+                    && docId == 'capturas'
                     && request.resource.data.keys().hasOnly(['seq'])
                     && request.resource.data.seq is int
                     && request.resource.data.seq == 1;
-      allow update: if docId == 'capturas'
+      allow update: if tieneUsuario()
+                    && docId == 'capturas'
                     && request.resource.data.keys().hasOnly(['seq'])
                     && request.resource.data.seq is int
                     && request.resource.data.seq == resource.data.seq + 1;
       allow delete: if false;
     }
 
-    // ── _ping: test de conectividad (write de prueba al arrancar) ──
+    // ── _ping: test de conectividad (write de prueba al arrancar sesión) ──
     match /_ping/{docId} {
-      allow read: if true;
-      allow write: if request.resource.data.keys().hasOnly(['ts'])
+      allow read: if tieneUsuario();
+      allow write: if tieneUsuario()
+                   && docId == 'test'
+                   && request.resource.data.keys().hasOnly(['ts'])
                    && request.resource.data.ts is number;
     }
 
-    // ── Todo lo demás: bloqueado ──
+    // ── Todo lo demás (incluye la vieja colección `pines`, ya retirada):
+    // bloqueado ──
     match /{document=**} {
       allow read, write: if false;
     }

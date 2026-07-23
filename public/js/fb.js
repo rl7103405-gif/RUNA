@@ -1,5 +1,6 @@
 // Inicialización de Firebase + indicador permanente de conexión
 import { toast } from './utils.js';
+import { APP } from './state.js';
 
 export const FB_CFG = {
   apiKey: 'AIzaSyCm8Ks6Lpds4LoIn3VZkZjh62VVRsXeHdI',
@@ -11,6 +12,7 @@ export const FB_CFG = {
 };
 
 export let db = null;
+export let auth = null;
 
 export function fsOk() {
   if (!db) { toast('Sin conexión a Firebase', false); return false; }
@@ -34,12 +36,14 @@ function watchConnection() {
   window.addEventListener('online', () => { setConn('wait', 'Reconectando…'); pingFS(); });
   window.addEventListener('offline', () => setConn('bad', 'Sin conexión'));
   // Re-verificar cada 60 s por si la red "dice" online pero Firestore no responde
-  setInterval(() => { if (navigator.onLine && db) pingFS(true); }, 60000);
+  setInterval(() => { if (navigator.onLine && db && auth.currentUser) pingFS(true); }, 60000);
 }
 
 let pinging = false;
 function pingFS(silent) {
-  if (!db || pinging) return;
+  // Las reglas de Firestore exigen sesión: sin usuario autenticado el ping
+  // fallaría con permission-denied y ensuciaría el indicador de conexión.
+  if (!db || !auth || !auth.currentUser || pinging) return;
   pinging = true;
   db.collection('_ping').doc('test').set({ ts: Date.now() })
     .then(() => setConn('ok', 'En línea'))
@@ -73,22 +77,27 @@ function initFB() {
   try {
     if (!firebase.apps.length) firebase.initializeApp(FB_CFG);
     db = firebase.firestore();
-    fbSt('🟡 Verificando Firestore…', 'var(--am)');
-    setConn('wait', 'Verificando…');
-    // Write de prueba: confirma conectividad + reglas (lección aprendida #4)
-    db.collection('_ping').doc('test').set({ ts: Date.now() })
-      .then(() => { fbSt('🟢 Firebase conectado', 'var(--gn)'); setConn('ok', 'En línea'); })
-      .catch(e => {
-        if (e.code === 'permission-denied') {
-          fbSt('🔴 Las reglas de Firestore rechazan escrituras — despliega firestore.rules o renueva el modo de prueba', 'var(--rd)');
-          setConn('bad', 'Reglas Firestore');
-        } else {
-          fbSt('🔴 Error Firestore: ' + e.code, 'var(--rd)');
-          setConn('bad', 'Sin conexión');
-        }
-        console.error('Firestore test:', e);
-      });
+    auth = firebase.auth();
+    fbSt('🟢 Firebase listo — inicia sesión', 'var(--gn)');
+    setConn('wait', 'Esperando sesión…');
     watchConnection();
+    // Las reglas de Firestore exigen autenticación real: no hay nada que
+    // verificar (ni el ping de prueba) hasta que el login con PIN complete
+    // el signIn de Firebase Auth (ver auth.js).
+    // Dispositivo compartido (tableta de piso): si al arrancar ya hay una
+    // sesión de Firebase Auth pegada de un uso anterior (crash, recarga a
+    // media sesión) pero nadie ha completado el login en esta app todavía
+    // (APP.user sigue null, pantalla s0), se cierra esa sesión heredada para
+    // que cada arranque parta de cero. Solo aplica al primer disparo de
+    // onAuthStateChanged; el signIn legítimo de submitPin() sigue de largo.
+    let primerCheckAuth = true;
+    auth.onAuthStateChanged(user => {
+      if (primerCheckAuth) {
+        primerCheckAuth = false;
+        if (user && !APP.user) { auth.signOut().catch(() => {}); return; }
+      }
+      if (user) pingFS();
+    });
   } catch (e) {
     fbSt('🔴 Error inicializando Firebase: ' + e.message, 'var(--rd)');
     setConn('bad', 'Error');

@@ -10,11 +10,17 @@
 Soy Beto, director de Deportivos Quini S.A. de C.V., fábrica de calcetines en Puebla, México. Estamos digitalizando el área de **muestristas** (los operarios que desarrollan las muestras físicas antes de producción).
 
 **Usuarios del sistema (3):**
-| Usuario | Rol | PIN por defecto |
-|---|---|---|
-| Lety | Admin — desarrollo de producto. Asigna tareas, revisa y aprueba fichas | `123456` |
-| Israel | Muestrista | `000001` |
-| Jesús | Muestrista | `000002` |
+| Usuario | Rol |
+|---|---|
+| Lety | Admin — desarrollo de producto. Asigna tareas, revisa y aprueba fichas |
+| Israel | Muestrista |
+| Jesús | Muestrista |
+
+El login es por PIN de 6 dígitos, pero ese PIN es la contraseña de una
+cuenta de Firebase Auth (correo sintético `{empleado}@quini-muestristas.local`)
+mapeada a su rol vía el documento de solo lectura `usuarios/{authUid}`. Los
+PINs vigentes se gestionan desde Firebase Console, no están documentados
+aquí.
 
 **Flujo del proceso:**
 1. Lety crea un desarrollo (tarea) y lo asigna a un muestrista. Puede ser **código único** o **pack con variantes** (un pack puede tener varios códigos de variante, ej. color negro=2798, gris=2818).
@@ -31,7 +37,7 @@ Soy Beto, director de Deportivos Quini S.A. de C.V., fábrica de calcetines en P
   - B = Con diseño (2.0 pts, 180 min)
   - C = Jacquard/alta complejidad (3.5 pts, 300 min)
 - Cambio de color NO es un desarrollo nuevo.
-- Los PINs son de 6 dígitos, se guardan en Firestore (colección `pines`) y se pueden cambiar desde la app. Cambiar cualquier PIN requiere confirmar con el PIN de admin (Lety).
+- Los PINs son de 6 dígitos y son la contraseña de la cuenta de Firebase Auth de cada empleado; cada quien puede cambiar su propio PIN desde la app (reautenticando con el PIN actual). Ya no existe "admin cambia el PIN de otro usuario" ni una colección `pines` en Firestore.
 - Hay ~113 máquinas (marca principal Zhenxing), la numeración se salta números, por eso **marca y número de máquina se capturan manualmente** (texto libre).
 
 **Campos de la ficha práctica (lo que captura el muestrista):**
@@ -84,7 +90,7 @@ const firebaseConfig = {
 **Colecciones Firestore actuales:**
 - `desarrollos` — {ot, po, codigo_quini, modelo, cliente, genero, talla, tipo_producto, tipo_complejidad, asignado_a, notas, variantes[{codigo, descripcion, pares_requeridos, tipo_pack}], estado: pendiente|en_proceso, fecha_creacion, creado_por}
 - `capturas` — {id_desarrollo, id_muestrista, codigo_variante, descripcion_variante, pares_requeridos, tipo_pack, modelo, cliente, ot, po, tipo_producto, estado: activo|pausado|pendiente_lety|correccion|aprobado, elapsed_seg, tm_seg, dt_inicio, dt_fin, maquina_marca, maquina_numero, med_sh{A-E}, med_h{A-E}, t_ciclo_min, t_ciclo_seg, peso_sal, peso_cer, giros{el,tb,pl,rb}, vels{el,tb,tp,pl}, pto{d1,d2,sk}, pares, obs, firma_m (dataURL), firma_l (dataURL), iter}
-- `pines` — doc por uid {pin: "123456"}
+- `usuarios` — doc por authUid, solo lectura {empleadoId, rol}, mapea la cuenta de Firebase Auth al empleado y su rol de negocio
 - `_ping` — test de conectividad
 
 **Lecciones aprendidas (bugs ya resueltos — NO reintroducir):**

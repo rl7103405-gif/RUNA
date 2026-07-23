@@ -18,7 +18,7 @@ public/                  ← raíz de Firebase Hosting (sin build, vanilla JS)
     utils.js             ← formato, navegación, toast, modal de confirmación
     fb.js                ← init de Firebase + indicador de conexión
     timers.js            ← timers múltiples basados en timestamps
-    auth.js              ← login por PIN y cambio de PINs
+    auth.js              ← login por PIN (Firebase Auth) y cambio de PIN propio
     muestrista.js        ← tareas, capturas activas, TM, historial
     captura.js           ← ficha práctica (formulario, borrador, corrección)
     firma.js             ← firma digital en canvas (touch + mouse)
@@ -34,16 +34,21 @@ legacy/                  ← prototipo original de un solo HTML (referencia)
 docs-especificacion.md   ← especificación completa del negocio
 ```
 
-## Usuarios y PINs por defecto
+## Usuarios y login
 
-| Usuario | Rol | PIN |
-|---|---|---|
-| Lety | Admin (asigna, revisa, aprueba) | `123456` |
-| Israel | Muestrista | `000001` |
-| Jesús | Muestrista | `000002` |
+| Usuario | Rol |
+|---|---|
+| Lety | Admin (asigna, revisa, aprueba) |
+| Israel | Muestrista |
+| Jesús | Muestrista |
 
-Los PINs se guardan en Firestore (colección `pines`) y se cambian desde la
-app; cualquier cambio requiere confirmar con el PIN de admin (Lety).
+El login es "elige tu ícono + tu PIN de 6 dígitos", pero el PIN es en
+realidad la contraseña de una cuenta de Firebase Auth (correo sintético
+`{empleado}@quini-muestristas.local`) mapeada a su rol vía el documento
+de solo lectura `usuarios/{authUid}`. La verificación la hace el servidor
+de Firebase Auth, no el cliente. Los PINs vigentes se gestionan y rotan
+desde Firebase Console (Authentication → usuario → Restablecer
+contraseña); cada empleado puede cambiar su propio PIN desde la app.
 
 ## Flujo del proceso
 
@@ -84,10 +89,10 @@ firebase login
 firebase deploy --only firestore:rules
 ```
 
-> ⚠️ Nota de seguridad: la app no usa Firebase Auth (login por PIN validado
-> en cliente), así que las reglas validan forma de datos y bloquean
-> colecciones ajenas y borrados, pero no pueden autenticar usuarios
-> individuales. Migrar a Firebase Auth es la mejora recomendada a futuro.
+> La app usa Firebase Auth real (correo sintético + PIN como contraseña):
+> las reglas verifican `request.auth.uid` contra `usuarios/{authUid}` para
+> autenticar y autorizar cada operación, además de validar forma de datos
+> y bloquear colecciones ajenas y borrados.
 
 ### Deploy manual de hosting (opcional)
 

@@ -61,17 +61,21 @@ export async function asignar() {
   }
   asignando = true;
   try {
-    await db.collection('desarrollos').add({
+    const devRef = db.collection('desarrollos').doc();
+    const privRef = db.collection('desarrollos_privado').doc(devRef.id);
+    const batch = db.batch();
+    batch.set(devRef, {
       ot: gv('l-ot'), po: gv('l-po'), codigo_quini: gv('l-cq'),
       modelo: mod, cliente: gv('l-cli'),
       genero: gv('l-gen'), talla: gv('l-tal'), tipo_producto: gv('l-tprod'),
-      tipo_complejidad: gv('l-comp'),
       asignado_a: gv('l-asig'),
-      notas: gv('l-notas'), variantes,
+      notas: gv('l-notas'), variantes, variante_codigos: variantes.map(v => v.codigo),
       estado: 'pendiente',
       fecha_creacion: firebase.firestore.FieldValue.serverTimestamp(),
-      creado_por: 'lety',
+      creado_por: APP.user.id,
     });
+    batch.set(privRef, { tipo_complejidad: gv('l-comp') });
+    await batch.commit();
     APP.vars = [];
     renderVars();
     ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-tal', 'l-tprod', 'l-notas', 's-cod', 's-desc', 's-pares', 's-pack'].forEach(id => {

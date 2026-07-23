@@ -17,6 +17,7 @@
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <!-- Firebase compat SDK (scripts clásicos: se ejecutan antes que los módulos) -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -127,7 +128,8 @@
     <span>🧦</span>
     <h1>Lety — Administración</h1>
     <span class="rbA">Admin</span>
-    <button onclick="logout()" style="background:none;border:none;color:var(--tx2);font-size:20px;cursor:pointer;padding:4px;margin-left:4px">⟵</button>
+    <button onclick="logout()" style="background:none;border:none;color:var(--tx2);font-size:20px;cursor:pointer;padding:4px;margin-left:4px" title="Salir">⟵</button>
+    <button onclick="openChangePinSelf()" style="background:none;border:none;color:var(--tx2);font-size:18px;cursor:pointer;padding:4px" title="Cambiar PIN">⚙️</button>
   </div>
   <div class="body">
     <!-- ASIGNAR -->
@@ -227,21 +229,9 @@
     <div id="lt3" class="tp">
       <div class="stitle">PINs de acceso</div>
       <div class="card" style="margin-bottom:8px">
-        <div style="font-size:12px;color:var(--tx2);margin-bottom:12px">Cambia el PIN de cualquier usuario. Se te pedirá tu PIN de admin para confirmar.</div>
-        <div class="pin-row">
-          <div><span style="font-size:16px">👩‍💼</span> <strong>Lety</strong></div>
-          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('lety')">🔑 Cambiar PIN</button>
-        </div>
-        <div class="pin-row">
-          <div><span style="font-size:16px">👨‍🔧</span> <strong>Israel</strong></div>
-          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('israel')">🔑 Cambiar PIN</button>
-        </div>
-        <div class="pin-row" style="margin-bottom:0">
-          <div><span style="font-size:16px">👨‍🔧</span> <strong>Jesús</strong></div>
-          <button class="btn btn-gh btn-sm" style="width:auto" onclick="openChangePin('jesus')">🔑 Cambiar PIN</button>
-        </div>
+        <div style="font-size:12px;color:var(--tx2)">Cada quien cambia su propio PIN desde el ícono ⚙️ de su pantalla (tú incluida: el ⚙️ de arriba). Ya no es posible cambiar el PIN de otra persona desde la app — es una protección de Firebase Auth, no un descuido.</div>
       </div>
-      <div class="al ali"><span>ℹ️</span><span style="font-size:12px">PINs por defecto: Lety=<strong>123456</strong> · Israel=<strong>000001</strong> · Jesús=<strong>000002</strong></span></div>
+      <div class="al alw"><span>🔑</span><span style="font-size:12px">Si alguien olvida su PIN, restablécelo desde <strong>Firebase Console → Authentication → Users</strong> → selecciona su cuenta → <strong>Restablecer contraseña</strong>.</span></div>
     </div>
   </div>
   <nav class="bnav">
@@ -313,9 +303,9 @@
   <div class="msheet">
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">🔑 Cambiar PIN</div>
     <div style="font-size:13px;color:var(--tx2);margin-bottom:14px" id="cp-who-label">—</div>
+    <div class="fg"><label class="fl">Tu PIN actual</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-old" placeholder="••••••"></div>
     <div class="fg"><label class="fl">Nuevo PIN (6 dígitos)</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-new" placeholder="••••••"></div>
     <div class="fg"><label class="fl">Confirmar nuevo PIN</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-confirm" placeholder="••••••"></div>
-    <div class="fg" id="cp-admin-wrap"><label class="fl">PIN de admin (Lety) para confirmar</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-admin" placeholder="••••••"></div>
     <button class="btn btn-am" onclick="savePin()">✓ Guardar PIN</button>
     <button class="btn btn-gh" onclick="closeOvl('ocp')">Cancelar</button>
   </div>
