@@ -5,7 +5,7 @@ import { APP, USERS, EMPLEADO_EMAIL } from './state.js';
 import { scr, toast, gv, openOvl, closeOvl } from './utils.js';
 import { clearAllTimers } from './timers.js';
 import { initMuestrista } from './muestrista.js';
-import { initLety } from './admin.js';
+import { initLety, setBadgePendientes } from './admin.js';
 
 export function selectUser(uid) {
   APP.pinTarget = uid;
@@ -115,6 +115,7 @@ export function logout() {
   APP.dbDocs = [];
   APP.activeCap = null;
   APP.activeCapFolio = null;
+  setBadgePendientes(0); // que no quede el conteo viejo al reingresar
   if (auth) auth.signOut().catch(() => {});
   scr('s0');
 }

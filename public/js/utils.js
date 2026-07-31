@@ -57,6 +57,29 @@ export function confirmDlg(title, msg, okLabel, onOk) {
   openOvl('ocf');
 }
 
+// Carga perezosa de una librería por CDN (SheetJS/ExcelJS pesan ~1 MB cada
+// una: solo se descargan cuando Lety usa la función que las necesita, nunca
+// en las tablets de los muestristas ni al abrir la app)
+const libs = new Map();
+export function loadLib(url, globalName) {
+  if (window[globalName]) return Promise.resolve(window[globalName]);
+  if (libs.has(url)) return libs.get(url);
+  const p = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.async = true;
+    s.onload = () => {
+      if (window[globalName]) return resolve(window[globalName]);
+      libs.delete(url);
+      reject(new Error('lib sin global: ' + globalName));
+    };
+    s.onerror = () => { libs.delete(url); reject(new Error('no se pudo descargar ' + url)); };
+    document.head.appendChild(s);
+  });
+  libs.set(url, p);
+  return p;
+}
+
 // Pantalla de éxito (check verde). Navegar PRIMERO a la pantalla destino y
 // luego llamar esto; el overlay solo se cierra con el botón "Listo"
 export function showExito(titulo, folio) {

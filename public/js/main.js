@@ -6,8 +6,10 @@ import { selectUser, numPad, backPin, clearPin, logout, openChangePinSelf, saveP
 import { mTab, loadMHist, openTMFor, endTMA, wireMuestristaEvents } from './muestrista.js';
 import { togCapTimer, backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
 import { clearSig, saveSig, backFirma } from './firma.js';
-import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents } from './admin.js';
-import { loadDB, exportCSV } from './dashboard.js';
+import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents, wireAutollenado } from './admin.js';
+import { loadDB } from './dashboard.js';
+import { exportCSV, exportExcel } from './export.js';
+import { openCatalogo, catArchivo, wireCatalogoEvents } from './catalogo.js';
 
 // El HTML estático usa onclick="..."; los módulos no son globales, así que
 // exponemos explícitamente lo que el markup necesita.
@@ -19,7 +21,8 @@ Object.assign(window, {
   togCapTimer, backCaptura, saveDraft, saveAndSign,
   clearSig, saveSig, backFirma,
   ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev,
-  loadDB, exportCSV,
+  loadDB, exportCSV, exportExcel,
+  openCatalogo, catArchivo,
 });
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -27,6 +30,8 @@ window.addEventListener('DOMContentLoaded', () => {
   wireMuestristaEvents();
   wireAdminEvents();
   wireCapturaEvents();
+  wireCatalogoEvents();
+  wireAutollenado();
   // Cerrar modales al tocar el fondo (excepto el de confirmación)
   ['otm', 'otma', 'ocp'].forEach(id => {
     const ovl = document.getElementById(id);

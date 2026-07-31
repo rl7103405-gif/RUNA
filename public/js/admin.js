@@ -4,6 +4,7 @@ import { APP, USERS, TM_CAUSES } from './state.js';
 import { es, fmt, fmtMin, fmtDate, gv, scr, toast, confirmDlg, tenFromDoc, esFirmaValida } from './utils.js';
 import { showFirma } from './firma.js';
 import { loadDB } from './dashboard.js';
+import { lookupCodigo, normalizarCodigo, watchCatalogo } from './catalogo.js';
 
 export function ltTab(i, btn) {
   [0, 1, 2, 3].forEach(j => document.getElementById('lt' + j).classList.remove('on'));
@@ -14,7 +15,42 @@ export function ltTab(i, btn) {
   if (i === 2) loadDB();
 }
 
-export function initLety() { loadRev(); }
+export function initLety() {
+  // Los listeners se apagan y se vuelven a crear en cada login (logout() los
+  // limpia): así no se duplican si Lety cierra y abre sesión en la tablet
+  APP.listeners.forEach(u => { try { u(); } catch (e) {} });
+  APP.listeners = [];
+  // Pendientes en vivo: alimenta el contador del menú y la lista de revisión
+  // (antes loadRev hacía otra consulta idéntica; ahora solo carga "En proceso")
+  APP.listeners.push(db.collection('capturas')
+    .where('estado', '==', 'pendiente_lety')
+    .onSnapshot(snap => {
+      if (!APP.user || APP.user.rol !== 'lety') return; // callback tardío
+      const docs = snap.docs;
+      setBadgePendientes(docs.length);
+      const el = document.getElementById('pend-list');
+      if (el) el.innerHTML = docs.length === 0
+        ? '<div class="empty"><div class="ico">✅</div><p>Sin fichas pendientes</p></div>'
+        : docs.map(d => renderRevCard(d.id, d.data())).join('');
+    }, e => {
+      console.error('pendientes:', e);
+      const el = document.getElementById('pend-list');
+      if (el) el.innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>No se pudieron cargar las fichas pendientes</p></div>';
+      toast('Error cargando pendientes — revisa tu conexión', false);
+    }));
+  const unsubCat = watchCatalogo();
+  if (unsubCat) APP.listeners.push(unsubCat);
+  loadRev();
+}
+
+export function setBadgePendientes(n) {
+  const b = document.getElementById('nav-pend');
+  if (!b) return;
+  b.textContent = n > 99 ? '99+' : String(n);
+  b.style.display = n > 0 ? '' : 'none';
+  const btn = b.closest('.nb');
+  if (btn) btn.setAttribute('aria-label', n > 0 ? `Revisar — ${n} ficha${n === 1 ? '' : 's'} pendiente${n === 1 ? '' : 's'}` : 'Revisar');
+}
 
 // ── Asignar ──
 export function setMode(mode) {
@@ -25,7 +61,64 @@ export function setMode(mode) {
   document.getElementById('form-pack').style.display = mode === 'pack' ? '' : 'none';
 }
 
-export function addVar() {
+// ── Autollenado desde el catálogo ──
+// Se dispara al salir del campo de código. Rellena SOLO campos vacíos: nunca
+// pisa lo que Lety ya escribió. Guard de carrera: si para cuando responde
+// Firestore el código del input ya cambió, el resultado viejo se descarta.
+// Además se guarda la promesa en curso (lookupPendiente) para que addVar()/
+// asignar() puedan esperarla si Lety toca el botón antes de que responda.
+let lookupPendiente = null;
+
+async function autollenar(inputId, campos) {
+  const cod = normalizarCodigo(gv(inputId));
+  if (!cod) return;
+  const p = lookupCodigo(cod);
+  lookupPendiente = p;
+  let data;
+  try {
+    data = await p;
+  } finally {
+    if (lookupPendiente === p) lookupPendiente = null;
+  }
+  if (!data) return;
+  if (normalizarCodigo(gv(inputId)) !== cod) return; // el código ya cambió
+  let puestos = 0;
+  Object.entries(campos).forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    const val = data[key];
+    if (!el || !val) return;
+    // El select de género arranca vacío justo para poder autollenarlo
+    if (el.tagName === 'SELECT') {
+      if (el.value) return;
+      const opt = Array.from(el.options).find(o => o.value.toLowerCase() === String(val).toLowerCase()
+        || o.textContent.trim().toLowerCase() === String(val).toLowerCase());
+      if (opt) { el.value = opt.value; puestos++; }
+      return;
+    }
+    if (el.value.trim()) return;
+    el.value = val;
+    puestos++;
+  });
+  if (puestos > 0) toast('📚 ' + puestos + ' dato' + (puestos === 1 ? '' : 's') + ' del catálogo');
+}
+
+export function wireAutollenado() {
+  const unico = document.getElementById('s-cod');
+  if (unico) unico.addEventListener('change', () => autollenar('s-cod', {
+    's-desc': 'descripcion', 's-pares': 'pares_requeridos', 's-pack': 'tipo_pack',
+    'l-mod': 'modelo', 'l-cli': 'cliente', 'l-gen': 'genero', 'l-tal': 'talla',
+    'l-tprod': 'tipo_producto', 'l-cq': 'codigo_quini',
+  }));
+  const vc = document.getElementById('vc');
+  if (vc) vc.addEventListener('change', () => autollenar('vc', {
+    'vd': 'descripcion', 'vp': 'pares_requeridos', 'vpk': 'tipo_pack',
+    'l-mod': 'modelo', 'l-cli': 'cliente', 'l-gen': 'genero', 'l-tal': 'talla',
+    'l-tprod': 'tipo_producto', 'l-cq': 'codigo_quini',
+  }));
+}
+
+export async function addVar() {
+  if (lookupPendiente) { try { await lookupPendiente; } catch (e) {} }
   const cod = gv('vc').trim();
   if (!cod) { toast('Ingresa código de variante', false); return; }
   // startCap identifica la variante por código: repetirlo colapsaría dos
@@ -48,19 +141,22 @@ let asignando = false;
 
 export async function asignar() {
   if (!fsOk() || asignando) return;
-  const mod = gv('l-mod').trim();
-  if (!mod) { toast('Ingresa el modelo', false); return; }
-  let variantes = [];
-  if (APP.asignMode === 'single') {
-    const cod = gv('s-cod').trim();
-    if (!cod) { toast('Ingresa el código de variante', false); return; }
-    variantes = [{ codigo: cod, descripcion: gv('s-desc').trim(), pares_requeridos: gv('s-pares').trim(), tipo_pack: gv('s-pack').trim() }];
-  } else {
-    if (APP.vars.length === 0) { toast('Agrega al menos una variante', false); return; }
-    variantes = [...APP.vars];
-  }
+  // asignando se marca ANTES del await al lookup pendiente (y no solo antes
+  // del batch) para que un doble toque durante ese await no pase el guard
   asignando = true;
   try {
+    if (lookupPendiente) { try { await lookupPendiente; } catch (e) {} }
+    const mod = gv('l-mod').trim();
+    if (!mod) { toast('Ingresa el modelo', false); return; }
+    let variantes = [];
+    if (APP.asignMode === 'single') {
+      const cod = gv('s-cod').trim();
+      if (!cod) { toast('Ingresa el código de variante', false); return; }
+      variantes = [{ codigo: cod, descripcion: gv('s-desc').trim(), pares_requeridos: gv('s-pares').trim(), tipo_pack: gv('s-pack').trim() }];
+    } else {
+      if (APP.vars.length === 0) { toast('Agrega al menos una variante', false); return; }
+      variantes = [...APP.vars];
+    }
     const devRef = db.collection('desarrollos').doc();
     const privRef = db.collection('desarrollos_privado').doc(devRef.id);
     const batch = db.batch();
@@ -78,7 +174,7 @@ export async function asignar() {
     await batch.commit();
     APP.vars = [];
     renderVars();
-    ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-tal', 'l-tprod', 'l-notas', 's-cod', 's-desc', 's-pares', 's-pack'].forEach(id => {
+    ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-gen', 'l-tal', 'l-tprod', 'l-notas', 's-cod', 's-desc', 's-pares', 's-pack'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -88,15 +184,11 @@ export async function asignar() {
 }
 
 // ── Revisar ──
+// La lista de pendientes la mantiene el listener de initLety en tiempo real;
+// aquí solo se recargan las capturas en proceso.
 export async function loadRev() {
   if (!fsOk()) return;
   try {
-    // Un solo where por query — sin índices compuestos manuales
-    const snap = await db.collection('capturas').where('estado', '==', 'pendiente_lety').get();
-    const el = document.getElementById('pend-list');
-    if (el) el.innerHTML = snap.empty
-      ? '<div class="empty"><div class="ico">✅</div><p>Sin fichas pendientes</p></div>'
-      : snap.docs.map(d => renderRevCard(d.id, d.data())).join('');
     const snap2 = await db.collection('capturas').where('estado', 'in', ['activo', 'pausado', 'correccion']).get();
     const el2 = document.getElementById('proc-list');
     if (el2) el2.innerHTML = snap2.empty

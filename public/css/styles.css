@@ -35,6 +35,9 @@ html,body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-syst
 .nb.on{color:var(--pri)}
 .nb .ico{font-size:20px}
 .tp{display:none}.tp.on{display:block}
+/* Contador de pendientes sobre el ícono del menú */
+.nb{position:relative}
+.nbadge{position:absolute;top:4px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--rd-full);color:#fff;font-size:10px;font-weight:800;line-height:18px;text-align:center;box-shadow:0 1px 3px rgba(15,23,42,.3)}
 /* CONNECTION INDICATOR (píldora oscura "inverse" sobre fondo claro) */
 .conn{position:fixed;bottom:calc(64px + env(safe-area-inset-bottom));left:8px;z-index:100;display:flex;align-items:center;gap:5px;background:rgba(15,23,42,.85);border-radius:12px;padding:3px 9px;font-size:11px;color:#e2e8f0;pointer-events:none;backdrop-filter:blur(4px)}
 .conn .cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}

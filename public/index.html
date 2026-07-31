@@ -150,7 +150,7 @@
         <div class="fg"><label class="fl">Cliente</label><input class="fi" id="l-cli" placeholder="Martí / Reebok"></div>
         <div class="g2">
           <div class="fg"><label class="fl">Género</label>
-            <select class="fi" id="l-gen"><option>Caballero</option><option>Dama</option><option>Niño</option><option>Niña</option><option>Unitalla</option></select>
+            <select class="fi" id="l-gen"><option value="">— elegir —</option><option>Caballero</option><option>Dama</option><option>Niño</option><option>Niña</option><option>Unitalla</option></select>
           </div>
           <div class="fg"><label class="fl">Talla</label><input class="fi" id="l-tal" placeholder="Unitalla"></div>
         </div>
@@ -203,7 +203,7 @@
     <!-- REVISAR -->
     <div id="lt1" class="tp">
       <div class="stitle">Pendientes de revisión</div>
-      <div id="pend-list"><div class="empty"><div class="ico">✅</div><p>Sin fichas pendientes</p></div></div>
+      <div id="pend-list"><div class="empty"><div class="ico">⏳</div><p>Cargando pendientes…</p></div></div>
       <div class="stitle" style="margin-top:16px">En proceso</div>
       <div id="proc-list"><div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div></div>
     </div>
@@ -221,12 +221,21 @@
         <div class="card" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TM total (min)</div><div style="font-size:24px;font-weight:700" id="db3">—</div></div>
       </div>
       <div id="db-cmp"></div>
-      <button class="btn btn-bl btn-sm" style="margin-bottom:12px" onclick="exportCSV()">📥 Exportar historial a CSV</button>
+      <div class="brow" style="margin-bottom:12px">
+        <button class="btn btn-bl btn-sm" id="btn-export" style="flex:2;margin:0" onclick="exportExcel()">📊 Exportar a Excel</button>
+        <button class="btn btn-gh btn-sm" style="flex:1;margin:0" onclick="exportCSV()">CSV</button>
+      </div>
       <div class="stitle">Historial</div>
       <div id="db-list"></div>
     </div>
     <!-- CONFIG -->
     <div id="lt3" class="tp">
+      <div class="stitle">Catálogo de códigos</div>
+      <div class="card" style="margin-bottom:8px">
+        <div style="font-size:12px;color:var(--tx2);margin-bottom:12px">Sube tu lista de códigos desde Excel o CSV. Después, al escribir un código de variante en <strong>Asignar</strong>, la app rellena sola los datos que ya conoce (modelo, cliente, color, pares, pack…).</div>
+        <div id="cat-info" style="font-size:12px;color:var(--tx2);margin-bottom:12px"></div>
+        <button class="btn btn-am btn-sm" style="width:100%" onclick="openCatalogo()">📤 Importar catálogo desde Excel / CSV</button>
+      </div>
       <div class="stitle">PINs de acceso</div>
       <div class="card" style="margin-bottom:8px">
         <div style="font-size:12px;color:var(--tx2)">Cada quien cambia su propio PIN desde el ícono ⚙️ de su pantalla (tú incluida: el ⚙️ de arriba). Ya no es posible cambiar el PIN de otra persona desde la app — es una protección de Firebase Auth, no un descuido.</div>
@@ -236,7 +245,7 @@
   </div>
   <nav class="bnav">
     <button class="nb on" onclick="ltTab(0,this)"><span class="ico">➕</span>Asignar</button>
-    <button class="nb" onclick="ltTab(1,this)"><span class="ico">📝</span>Revisar</button>
+    <button class="nb" onclick="ltTab(1,this)"><span class="ico">📝</span>Revisar<span class="nbadge" id="nav-pend" style="display:none">0</span></button>
     <button class="nb" onclick="ltTab(2,this)"><span class="ico">📊</span>Dashboard</button>
     <button class="nb" onclick="ltTab(3,this)"><span class="ico">⚙️</span>Config</button>
   </nav>
@@ -308,6 +317,16 @@
     <div class="fg"><label class="fl">Confirmar nuevo PIN</label><input class="fi" type="password" inputmode="numeric" maxlength="6" id="cp-confirm" placeholder="••••••"></div>
     <button class="btn btn-am" onclick="savePin()">✓ Guardar PIN</button>
     <button class="btn btn-gh" onclick="closeOvl('ocp')">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL: IMPORTAR CATÁLOGO (solo Lety) -->
+<div class="ovl" id="ocat">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:800;margin-bottom:4px">📤 Importar catálogo</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:14px">Excel (.xlsx, .xls) o CSV · máximo 8 MB</div>
+    <div class="fg"><input class="fi" type="file" id="cat-file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="catArchivo(this)"></div>
+    <div id="cat-ui"></div>
   </div>
 </div>
 

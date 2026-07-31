@@ -40,7 +40,9 @@ service cloud.firestore {
       return usuarioDoc().data.empleadoId;
     }
     function esAdmin() {
-      return tieneUsuario() && usuarioDoc().data.rol == 'admin';
+      return autenticado()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin';
     }
     function esMuestristaActual() {
       return tieneUsuario() && usuarioDoc().data.rol == 'muestrista';
@@ -204,6 +206,55 @@ service cloud.firestore {
                     && request.resource.data.seq is int
                     && request.resource.data.seq == resource.data.seq + 1;
       allow delete: if false;
+    }
+
+    // ── catalogo: códigos importados desde Excel por Lety para autollenar
+    // la pantalla Asignar. Doc id = código normalizado (mayúsculas, sin
+    // espacios ni '/'), así el autollenado es un point-read directo.
+    // El cliente trunca a 200 caracteres (limpiaTexto); el margen a 600 evita
+    // que una descripción con muchos acentos rebote el lote entero si size()
+    // se evalúa en bytes UTF-8 en vez de caracteres.
+    function textoCat(data, campo) {
+      return campo in data && data[campo] is string && data[campo].size() <= 600;
+    }
+    match /catalogo/{codigo} {
+      allow read: if tieneUsuario();
+      allow create, update: if esAdmin()
+                    && request.resource.data.keys().hasOnly([
+                         'codigo', 'descripcion', 'modelo', 'cliente', 'pares_requeridos',
+                         'tipo_pack', 'genero', 'talla', 'tipo_producto', 'codigo_quini', 'actualizado'])
+                    && request.resource.data.codigo == codigo
+                    && codigo.size() > 0 && codigo.size() <= 60
+                    && codigo.matches('^[A-Z0-9][A-Z0-9._-]*$')
+                    && textoCat(request.resource.data, 'descripcion')
+                    && textoCat(request.resource.data, 'modelo')
+                    && textoCat(request.resource.data, 'cliente')
+                    && textoCat(request.resource.data, 'pares_requeridos')
+                    && textoCat(request.resource.data, 'tipo_pack')
+                    && textoCat(request.resource.data, 'genero')
+                    && textoCat(request.resource.data, 'talla')
+                    && textoCat(request.resource.data, 'tipo_producto')
+                    && textoCat(request.resource.data, 'codigo_quini')
+                    && request.resource.data.actualizado == request.time;
+      allow delete: if esAdmin();
+    }
+
+    // ── catalogo_meta/info: última importación. Su importId es lo que
+    // invalida la caché de autollenado en todos los dispositivos.
+    match /catalogo_meta/{docId} {
+      allow read: if tieneUsuario();
+      allow write: if esAdmin()
+                   && docId == 'info'
+                   && request.resource.data.keys().hasOnly(['filas_importadas', 'total_archivo', 'fuente', 'importId', 'actualizado'])
+                   && request.resource.data.filas_importadas is int
+                   && request.resource.data.filas_importadas >= 0
+                   && request.resource.data.total_archivo is int
+                   && request.resource.data.total_archivo >= 0
+                   && request.resource.data.fuente is string
+                   && request.resource.data.fuente.size() <= 120
+                   && request.resource.data.importId is string
+                   && request.resource.data.importId.size() <= 40
+                   && request.resource.data.actualizado == request.time;
     }
 
     // ── _ping: test de conectividad (write de prueba al arrancar sesión) ──

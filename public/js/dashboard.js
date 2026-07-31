@@ -1,7 +1,9 @@
-// Dashboard de Lety: KPIs, historial filtrable y exportación a CSV
+// Dashboard de Lety: KPIs, historial filtrable y barras de comparación.
+// La exportación (CSV y Excel) vive en export.js, con una sola definición de
+// columnas compartida por ambos formatos.
 import { db, fsOk } from './fb.js';
 import { APP, USERS, TM_CAUSES } from './state.js';
-import { es, fmtMin, fmtDate, getRange, toast, tenFromDoc, penFromCausas } from './utils.js';
+import { es, fmtMin, fmtDate, getRange, toast, tenFromDoc } from './utils.js';
 
 // Identificador de carga: si el filtro cambia mientras una consulta vieja
 // sigue en vuelo, la respuesta vieja se descarta (no pisa la nueva)
@@ -104,65 +106,4 @@ function renderBarras(cmpEl, who, docs, aprob) {
       + causas.map(c => barra(c.label, c.val + 'm', c.raw / maxRaw, 'var(--rd-full)')).join('');
   }
   cmpEl.innerHTML = html;
-}
-
-// ── Exportar historial a CSV ──
-function csvCell(v) {
-  const s = String(v ?? '');
-  return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
-
-// Campos de texto libre: neutralizar inicio de fórmula para Excel
-function txt(v) {
-  const s = String(v ?? '');
-  return /^\s*[=+\-@\t\r]/.test(s) ? "'" + s : s;
-}
-
-export function exportCSV() {
-  const docs = APP.dbDocs || [];
-  if (docs.length === 0) { toast('No hay datos en el período seleccionado', false); return; }
-  const header = ['folio', 'fecha_fin', 'muestrista', 'estado', 'iteracion', 'ot', 'po', 'modelo', 'cliente', 'tipo_producto',
-    'codigo_variante', 'descripcion', 'tipo_pack', 'pares_producidos', 'pares_requeridos',
-    'bruto_min', 'tm_min', 'tm_penalizable_min', 'ten_min', 'maquina_marca', 'maquina_numero',
-    't_ciclo_min', 't_ciclo_seg', 'peso_salida_g', 'peso_cerrado_g',
-    'med_sh_A', 'med_sh_B', 'med_sh_C', 'med_sh_D', 'med_sh_E',
-    'med_h_A', 'med_h_B', 'med_h_C', 'med_h_D', 'med_h_E',
-    'giros_elastico', 'giros_tubo', 'giros_planta', 'giros_rubber',
-    'vel_elastico', 'vel_tubo', 'vel_talon_punta', 'vel_planta',
-    'den1', 'den2', 'sink2',
-    ...TM_CAUSES.map(c => 'tm_' + c.id + '_min'),
-    'observaciones'];
-  const rows = docs.map(({ data: dt }) => {
-    const sh = dt.med_sh || {}, mh = dt.med_h || {}, gi = dt.giros || {}, vl = dt.vels || {}, pt = dt.pto || {};
-    const tc = dt.tm_causas || {};
-    const fin = dt.dt_fin && dt.dt_fin.toDate ? dt.dt_fin.toDate().toISOString() : '';
-    const bruto = dt.elapsed_seg || 0, tm = dt.tm_seg || 0;
-    return [txt(dt.folio), fin, (USERS[dt.id_muestrista] || {}).nombre || dt.id_muestrista, dt.estado, Number(dt.iter) || 1,
-      txt(dt.ot), txt(dt.po), txt(dt.modelo), txt(dt.cliente), txt(dt.tipo_producto),
-      txt(dt.codigo_variante), txt(dt.descripcion_variante), txt(dt.tipo_pack), txt(dt.pares), txt(dt.pares_requeridos),
-      (bruto / 60).toFixed(1), (tm / 60).toFixed(1),
-      (penFromCausas(tc) / 60).toFixed(1), (tenFromDoc(dt) / 60).toFixed(1),
-      txt(dt.maquina_marca), txt(dt.maquina_numero),
-      txt(dt.t_ciclo_min), txt(dt.t_ciclo_seg), txt(dt.peso_sal), txt(dt.peso_cer),
-      txt(sh.A), txt(sh.B), txt(sh.C), txt(sh.D), txt(sh.E),
-      txt(mh.A), txt(mh.B), txt(mh.C), txt(mh.D), txt(mh.E),
-      txt(gi.el), txt(gi.tb), txt(gi.pl), txt(gi.rb),
-      txt(vl.el), txt(vl.tb), txt(vl.tp), txt(vl.pl),
-      txt(pt.d1), txt(pt.d2), txt(pt.sk),
-      ...TM_CAUSES.map(c => ((tc[c.id] || 0) / 60).toFixed(1)),
-      txt(dt.obs)].map(csvCell).join(',');
-  });
-  // BOM para que Excel abra acentos correctamente
-  const csv = '\uFEFF' + header.join(',') + '\n' + rows.join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  const period = document.getElementById('dp')?.value || 'month';
-  const today = new Date().toISOString().slice(0, 10);
-  a.download = `historial-muestristas-${period}-${today}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  toast('📥 CSV exportado (' + docs.length + ' registros)');
 }
