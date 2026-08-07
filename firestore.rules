@@ -20,6 +20,28 @@ rules_version = '2';
 // cualquier usuario. Con request.auth.uid verificado por Google, eso ya
 // no es posible.
 //
+// ALCANCE DE CADA ROL (definido 2026-08-07):
+//   · Muestrista — ve ÚNICAMENTE lo suyo: los desarrollos donde él es el
+//     `asignado_a` y las capturas donde él es el `id_muestrista`. No ve el
+//     trabajo de su compañero ni el dashboard comparativo.
+//   · Admin (Lety) — ve todo: asigna, revisa, aprueba y es la única que abre
+//     el dashboard, el catálogo y las exportaciones.
+//
+//   Por qué NO se copió el modelo de la app hermana (captura-mecanicos):
+//   allá las incidencias son una cola compartida y cualquier mecánico debe
+//   poder verlas todas para tomar la que le toque. Aquí no hay cola: Lety
+//   asigna nominalmente, así que la lectura amplia no compraba nada y solo
+//   exponía el trabajo ajeno.
+//
+// LA ASIGNACIÓN ES PERMANENTE. `asignado_a` (desarrollos) e `id_muestrista`
+// (capturas) son inmutables, y la segmentación de lectura de arriba depende
+// de eso. Si algún día se quiere permitir reasignar o cubrir una ausencia,
+// NO basta con volver mutable `asignado_a`: el dueño anterior conservaría
+// sus capturas y el nuevo vería el desarrollo sin poder continuarlas, y se
+// podría duplicar la ficha de una variante ya capturada. Ese traspaso tiene
+// que resolver las capturas abiertas y preservar la autoría histórica (las
+// métricas por muestrista se calculan sobre `id_muestrista`).
+//
 // Despliegue:  firebase deploy --only firestore:rules
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -33,19 +55,35 @@ service cloud.firestore {
     function usuarioDoc() {
       return get(/databases/$(database)/documents/usuarios/$(request.auth.uid));
     }
-    function tieneUsuario() {
-      return autenticado() && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    // Baja de personal sin borrar la cuenta: `activo: false` en el perfil
+    // corta el acceso en la siguiente petición, sin esperar a que expire el
+    // ID token. El default es `true` a propósito — los tres perfiles actuales
+    // se crearon a mano antes de que existiera el campo y `usuarios` tiene
+    // `allow write: if false`, así que no se pueden migrar desde la app: un
+    // default `false` dejaría fuera a todo el mundo en el instante del deploy.
+    // Campo ausente = perfil legacy = activo. Si se llega a poblar `activo`
+    // en los tres perfiles desde la consola, conviene cambiar el default a
+    // `false` (más seguro). IMPORTANTE al desactivar desde la consola de
+    // Firebase: el campo debe ser de tipo booleano, no el string "false" —
+    // un valor mal tipado también bloquea el acceso (falla el `is bool`),
+    // pero es mucho más confuso de diagnosticar que un rechazo limpio.
+    function activoOk() {
+      return usuarioDoc().data.get('activo', true) is bool
+        && usuarioDoc().data.get('activo', true) == true;
+    }
+    function tieneUsuarioActivo() {
+      return autenticado()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+        && activoOk();
     }
     function miEmpleadoId() {
       return usuarioDoc().data.empleadoId;
     }
     function esAdmin() {
-      return autenticado()
-        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
-        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin';
+      return tieneUsuarioActivo() && usuarioDoc().data.rol == 'admin';
     }
     function esMuestristaActual() {
-      return tieneUsuario() && usuarioDoc().data.rol == 'muestrista';
+      return tieneUsuarioActivo() && usuarioDoc().data.rol == 'muestrista';
     }
 
     // ── Helpers de datos (validación de forma, igual que antes) ──
@@ -83,7 +121,12 @@ service cloud.firestore {
 
     // ── desarrollos: tareas que Lety asigna ──
     match /desarrollos/{devId} {
-      allow read: if tieneUsuario();
+      // Lety ve todos; cada muestrista solo los suyos. Como las reglas NO
+      // filtran, toda consulta de lista del muestrista debe traer su propio
+      // where('asignado_a','==',...) o Firestore la rechaza entera
+      // (ver muestrista.js y captura.js).
+      allow read: if esAdmin()
+                  || (esMuestristaActual() && resource.data.asignado_a == miEmpleadoId());
       allow create: if esAdmin()
                     && request.resource.data.modelo is string
                     && request.resource.data.modelo.size() > 0
@@ -124,7 +167,10 @@ service cloud.firestore {
 
     // ── capturas: fichas prácticas (una por variante) ──
     match /capturas/{capId} {
-      allow read: if tieneUsuario();
+      // Misma segmentación que desarrollos: Lety todo, el muestrista solo sus
+      // fichas. El dashboard comparativo por muestrista es exclusivo de Lety.
+      allow read: if esAdmin()
+                  || (esMuestristaActual() && resource.data.id_muestrista == miEmpleadoId());
       allow create: if esMuestristaActual()
                     && request.resource.data.id_muestrista == miEmpleadoId()
                     && request.resource.data.id_desarrollo is string
@@ -163,6 +209,15 @@ service cloud.firestore {
                     && tiemposOk(request.resource.data)
                     && firmaOk(request.resource.data, 'firma_m')
                     && firmaOk(request.resource.data, 'firma_l')
+                    // Cada firma solo la puede producir su dueño real:
+                    // `firma_l` (aprobación) es exclusiva del admin, y `firma_m`
+                    // solo la crea el muestrista. El admin sí puede LIMPIARLA
+                    // (ponerla en null) al rechazar una ficha, pero no fabricarla.
+                    && (request.resource.data.get('firma_l', null) == resource.data.get('firma_l', null)
+                        || esAdmin())
+                    && (request.resource.data.get('firma_m', null) == resource.data.get('firma_m', null)
+                        || esMuestristaActual()
+                        || request.resource.data.get('firma_m', null) == null)
                     // Una ficha aprobada solo puede reabrirse a pendiente_lety
                     && (resource.data.estado != 'aprobado'
                         || request.resource.data.estado == 'pendiente_lety')
@@ -193,14 +248,22 @@ service cloud.firestore {
 
     // ── contadores: folios consecutivos (doc 'capturas' = { seq }) ──
     // Solo se acepta el siguiente consecutivo exacto: sin saltos ni retrocesos
+    // Solo el muestrista escribe aquí: es quien crea fichas. Lety nunca crea
+    // capturas, así que no necesita tocar el contador.
+    // LIMITACIÓN CONOCIDA: un muestrista podría incrementar el contador sin
+    // crear la captura correspondiente y quemar folios (no rompe la unicidad,
+    // solo deja huecos en la serie). Cerrarlo requiere un puntero cruzado
+    // `last_cap_id` entre contador y captura, que no se implementó porque no
+    // hay forma de probarlo en local (el emulador de Firestore necesita Java,
+    // que no está instalado) y toca la ruta crítica de creación de fichas.
     match /contadores/{docId} {
-      allow read: if tieneUsuario();
-      allow create: if tieneUsuario()
+      allow read: if tieneUsuarioActivo();
+      allow create: if esMuestristaActual()
                     && docId == 'capturas'
                     && request.resource.data.keys().hasOnly(['seq'])
                     && request.resource.data.seq is int
                     && request.resource.data.seq == 1;
-      allow update: if tieneUsuario()
+      allow update: if esMuestristaActual()
                     && docId == 'capturas'
                     && request.resource.data.keys().hasOnly(['seq'])
                     && request.resource.data.seq is int
@@ -218,7 +281,7 @@ service cloud.firestore {
       return campo in data && data[campo] is string && data[campo].size() <= 600;
     }
     match /catalogo/{codigo} {
-      allow read: if tieneUsuario();
+      allow read: if tieneUsuarioActivo();
       allow create, update: if esAdmin()
                     && request.resource.data.keys().hasOnly([
                          'codigo', 'descripcion', 'modelo', 'cliente', 'pares_requeridos',
@@ -242,7 +305,7 @@ service cloud.firestore {
     // ── catalogo_meta/info: última importación. Su importId es lo que
     // invalida la caché de autollenado en todos los dispositivos.
     match /catalogo_meta/{docId} {
-      allow read: if tieneUsuario();
+      allow read: if tieneUsuarioActivo();
       allow write: if esAdmin()
                    && docId == 'info'
                    && request.resource.data.keys().hasOnly(['filas_importadas', 'total_archivo', 'fuente', 'importId', 'actualizado'])
@@ -259,8 +322,8 @@ service cloud.firestore {
 
     // ── _ping: test de conectividad (write de prueba al arrancar sesión) ──
     match /_ping/{docId} {
-      allow read: if tieneUsuario();
-      allow write: if tieneUsuario()
+      allow read: if tieneUsuarioActivo();
+      allow write: if tieneUsuarioActivo()
                    && docId == 'test'
                    && request.resource.data.keys().hasOnly(['ts'])
                    && request.resource.data.ts is number;

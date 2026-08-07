@@ -28,7 +28,12 @@ export function initMuestrista() {
         .filter(d => ['pendiente', 'en_proceso'].includes(d.data().estado))
         .map(d => ({ id: d.id, data: d.data() }));
       renderTareas();
-    }, e => console.error(e)));
+    }, e => {
+      console.error('tareas:', e);
+      const el = document.getElementById('tareas-list');
+      if (el) el.innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>No se pudieron cargar tus tareas</p></div>';
+      toast('Error cargando tareas — revisa tu conexión', false);
+    }));
   // TODAS las capturas del muestrista: las abiertas alimentan "Activas" y el
   // resto sirve para marcar el avance por variante en "Mis tareas"
   APP.listeners.push(db.collection('capturas')
@@ -47,7 +52,12 @@ export function initMuestrista() {
       APP.activasSnap = open;
       renderActivas();
       renderTareas();
-    }, e => console.error(e)));
+    }, e => {
+      console.error('capturas:', e);
+      const el = document.getElementById('activas-list');
+      if (el) el.innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>No se pudieron cargar tus capturas</p></div>';
+      toast('Error cargando capturas — revisa tu conexión', false);
+    }));
 }
 
 // Estado de una variante según sus capturas existentes

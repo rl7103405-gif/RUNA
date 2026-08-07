@@ -1,5 +1,22 @@
 # PROMPT PARA CLAUDE CODE — Sistema de Muestristas · Deportivos Quini
 
+> ⚠️ **DOCUMENTO HISTÓRICO.** Este es el brief original con el que se encargó
+> la app, no una descripción de cómo funciona hoy. Sirve para entender el
+> *porqué* de las decisiones de negocio (flujo de trabajo, TM/TEN, ficha
+> práctica), pero varias partes técnicas ya no aplican:
+>
+> - El **tema visual dark con acento ámbar `#F5A623`** (punto 1 de "Lo que
+>   quiero que hagas") fue sustituido por un **tema claro con acento azul
+>   `#1d4ed8`** el 2026-07-21.
+> - Las **reglas de Firestore ya no están en modo prueba**: son reglas de
+>   producción con identidad verificada por Firebase Auth. Ver `firestore.rules`.
+> - El **login por PIN** ya no compara contra una colección `pines`: el PIN es
+>   la contraseña de una cuenta real de Firebase Auth.
+> - La **foto de la muestra** sigue sin implementarse, pero ya no por falta de
+>   plan Blaze (se contrató el 2026-08-04).
+>
+> Para el estado actual, leer el `README.md`.
+
 > Copia todo este documento y pégalo como primer mensaje en Claude Code.
 > Coloca también el archivo `sistema-muestristas-quini.html` en la carpeta del proyecto antes de empezar.
 

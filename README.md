@@ -11,7 +11,7 @@ con timers y tiempos muertos, firmas digitales y dashboard de KPIs.
 ```
 public/                  ← raíz de Firebase Hosting (sin build, vanilla JS)
   index.html             ← shell de la app (todas las pantallas)
-  css/styles.css         ← tema dark, acento ámbar #F5A623, mobile-first
+  css/styles.css         ← tema claro, acento azul #1d4ed8, mobile-first
   js/
     main.js              ← punto de entrada, expone handlers y arranca todo
     state.js             ← estado global, usuarios y catálogo de causas TM
@@ -23,7 +23,9 @@ public/                  ← raíz de Firebase Hosting (sin build, vanilla JS)
     captura.js           ← ficha práctica (formulario, borrador, corrección)
     firma.js             ← firma digital en canvas (touch + mouse)
     admin.js             ← vista Lety: asignar, revisar, aprobar/rechazar
-    dashboard.js         ← KPIs, historial filtrable, exportación CSV
+    dashboard.js         ← KPIs, historial filtrable (solo Lety)
+    catalogo.js          ← importar catálogo desde Excel/CSV (SheetJS, CDN)
+    export.js            ← exportación a CSV y xlsx (ExcelJS, CDN)
   sw.js                  ← service worker (interfaz offline)
   manifest.webmanifest   ← instalable en Android/iOS
   icons/                 ← íconos PWA
@@ -31,8 +33,31 @@ firestore.rules          ← reglas de producción de Firestore
 firebase.json            ← config de Hosting + Firestore
 .github/workflows/       ← deploy automático a Hosting en push a main
 legacy/                  ← prototipo original de un solo HTML (referencia)
-docs-especificacion.md   ← especificación completa del negocio
+docs-especificacion.md   ← brief ORIGINAL del encargo (histórico, ver aviso
+                           dentro: partes ya no describen la app actual)
 ```
+
+## Qué ve cada rol
+
+| | Muestrista (Israel, Jesús) | Admin (Lety) |
+|---|---|---|
+| Desarrollos | solo los asignados a él | todos |
+| Capturas | solo las suyas | todas |
+| Dashboard y exportaciones | no | sí |
+| Catálogo (importar) | no | sí |
+| Complejidad A/B/C | nunca | sí |
+
+La segmentación la imponen las reglas de Firestore, no la interfaz. Como las
+reglas **no filtran** las consultas, cada `list` que hace un muestrista tiene
+que llevar su propio `where` por dueño (`asignado_a` o `id_muestrista`) o
+Firestore rechaza la consulta completa. Si agregas una consulta nueva en la
+vista del muestrista y te da `permission-denied`, es casi seguro que le falta
+ese `where`.
+
+**Baja de personal:** poner `activo: false` en `usuarios/{authUid}` desde la
+consola de Firebase corta el acceso en la siguiente petición. El campo ausente
+se interpreta como activo (los perfiles actuales se crearon antes de que
+existiera).
 
 ## Usuarios y login
 
@@ -119,10 +144,10 @@ firebase emulators:start --only hosting
 - **Timers por timestamps** (`Date.now()`), no contadores `setInterval`:
   el tiempo es exacto aunque la tablet apague la pantalla o el navegador
   congele la pestaña. Estado persistido en `localStorage` por usuario.
-- **Queries de Firestore con un solo `where`** (o solo igualdades) y
-  filtrado de fecha/estado en el cliente, para no requerir índices
-  compuestos manuales.
+- **Queries de Firestore solo con varios `where` DE IGUALDAD** (nunca
+  rangos ni combinados con `orderBy`) y filtrado de fecha/estado en el
+  cliente, para no requerir índices compuestos manuales.
 - **La complejidad (A/B/C) nunca se muestra a los muestristas** — solo
-  existe en la vista de Lety y en el documento `desarrollos`.
+  existe en la vista de Lety y en el documento `desarrollos_privado`.
 - **Sin Firebase Storage** (fotos de muestra quedan para cuando se active
   el plan Blaze).

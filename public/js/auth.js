@@ -88,6 +88,20 @@ async function submitPin() {
       mostrarError(uid, 'Cuenta mal configurada — avisa a Roberto');
       return;
     }
+    // Baja de personal: `activo: false` en el perfil. Las reglas de Firestore
+    // son la autoridad y ya le niegan todo; este corte es para que no entre a
+    // una app vacía llena de errores de permisos sin entender por qué.
+    // Campo ausente = perfil creado antes de que existiera el campo = activo
+    // (mismo default que firestore.rules). Cualquier otro valor que no sea
+    // exactamente `true` (string "false", 0, null...) se trata como inactivo:
+    // las reglas exigen `is bool && == true`, así que un valor mal tipado ya
+    // es rechazado por el servidor y aquí debe coincidir el mismo criterio.
+    const activo = perfil.data().activo;
+    if (activo !== undefined && activo !== true) {
+      await auth.signOut().catch(() => {});
+      mostrarError(uid, 'Tu cuenta está desactivada — avisa a Roberto');
+      return;
+    }
     login(uid, perfil.data().rol);
   } catch (e) {
     console.error('login:', e);
@@ -101,6 +115,17 @@ export function login(uid, rol) {
   APP.user = { id: uid, ...USERS[uid] };
   if (rol === 'admin') { initLety(); scr('sL'); }
   else { initMuestrista(); scr('sM'); }
+  // Vigila el propio perfil para cortar la sesión en vivo si Lety desactiva
+  // esta cuenta mientras la tablet ya está abierta (si no, sigue con la UI y
+  // los timers corriendo hasta que falle un guardado sin explicación). Se
+  // registra DESPUÉS de initLety()/initMuestrista() porque esas funciones
+  // vacían APP.listeners al arrancar (muestrista.js:21-22, admin.js:21-22);
+  // si se registrara antes, quedaría borrado de inmediato.
+  APP.listeners.push(db.collection('usuarios').doc(auth.currentUser.uid)
+    .onSnapshot(s => {
+      const a = s.data()?.activo;
+      if (a !== undefined && a !== true) { toast('Tu cuenta fue desactivada', false); logout(); }
+    }, e => console.error('perfil:', e)));
 }
 
 export function logout() {

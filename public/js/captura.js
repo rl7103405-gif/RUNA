@@ -12,10 +12,17 @@ export async function startCap(devId, cod) {
   if (!fsOk() || startBusy) return;
   startBusy = true;
   try {
-    // Dos where de igualdad no requieren índice compuesto manual
+    // Tres where de igualdad no requieren índice compuesto manual (Firestore
+    // combina índices de campo único). El filtro por id_muestrista NO es
+    // cosmético: las reglas solo dejan al muestrista leer sus propias
+    // capturas, y sin este where Firestore rechaza la consulta completa.
+    // No pierde duplicados: todas las capturas de un desarrollo son del
+    // mismo empleado, porque la regla de `create` exige que su dueño sea el
+    // `asignado_a` del desarrollo.
     const ex = await db.collection('capturas')
       .where('id_desarrollo', '==', devId)
       .where('codigo_variante', '==', cod)
+      .where('id_muestrista', '==', APP.user.id)
       .get();
     // Incluye 'correccion': reabrir en vez de duplicar (bug del prototipo)
     const exOpen = ex.docs.find(d => OPEN_STATES.includes(d.data().estado));
@@ -71,6 +78,7 @@ async function createCap(devId, cod) {
     const dup = await db.collection('capturas')
       .where('id_desarrollo', '==', devId)
       .where('codigo_variante', '==', cod)
+      .where('id_muestrista', '==', APP.user.id)
       .get();
     if (dup.docs.some(d => [...OPEN_STATES, 'pendiente_lety'].includes(d.data().estado))) {
       toast('Ya existe una captura en curso para esta variante', false);
