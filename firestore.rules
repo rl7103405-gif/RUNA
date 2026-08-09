@@ -149,7 +149,13 @@ service cloud.firestore {
                     && request.resource.data.get('asignado_a', '') == resource.data.get('asignado_a', '')
                     && request.resource.data.get('variantes', []) == resource.data.get('variantes', [])
                     && request.resource.data.get('variante_codigos', []) == resource.data.get('variante_codigos', [])
-                    && request.resource.data.get('creado_por', '') == resource.data.get('creado_por', '');
+                    && request.resource.data.get('creado_por', '') == resource.data.get('creado_por', '')
+                    // El único update legítimo (Lety al asignar, o el
+                    // muestrista al iniciar captura) solo toca 'estado'; los
+                    // == de arriba ya congelan los campos sensibles conocidos,
+                    // pero no impedían agregar campos nuevos. hasOnly cierra
+                    // ese hueco por completo.
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado']);
       allow delete: if false;
     }
 
@@ -179,12 +185,22 @@ service cloud.firestore {
                     && tiemposOk(request.resource.data)
                     && firmaOk(request.resource.data, 'firma_m')
                     && firmaOk(request.resource.data, 'firma_l')
+                    // Las firmas deben nacer vacías: si no, un muestrista
+                    // podría crear su ficha con firma_l (aprobación de Lety)
+                    // ya puesta — bomba latente que se aprueba sola después.
+                    && request.resource.data.get('firma_l', null) == null
+                    && request.resource.data.get('firma_m', null) == null
                     // Folio consecutivo obligatorio, amarrado al contador que
                     // la MISMA transacción deja actualizado (getAfter)
                     && request.resource.data.folio is string
                     && request.resource.data.folio.matches('^FP-[0-9]{5,}$')
                     && request.resource.data.folio_seq is int
                     && request.resource.data.folio_seq > 0
+                    // El texto del folio debe corresponder al número real del
+                    // contador (tolera ceros a la izquierda, no los exige):
+                    // sin esto, alguien podría crear folio_seq:2 con
+                    // folio:"FP-00001" y falsificar el folio impreso.
+                    && request.resource.data.folio.matches('^FP-0*' + string(request.resource.data.folio_seq) + '$')
                     && getAfter(/databases/$(database)/documents/contadores/capturas).data.seq == request.resource.data.folio_seq
                     // Cierra el hueco de atomicidad: exige que el contador
                     // haya estado exactamente en folio_seq-1 ANTES de esta
@@ -281,7 +297,10 @@ service cloud.firestore {
       return campo in data && data[campo] is string && data[campo].size() <= 600;
     }
     match /catalogo/{codigo} {
-      allow read: if tieneUsuarioActivo();
+      // Solo Lety usa el catálogo (autollenado/import en admin.js); el
+      // muestrista nunca lo lee. Lectura amplia exponía todos los códigos,
+      // modelos y clientes de todos los pedidos a cualquier cuenta activa.
+      allow read: if esAdmin();
       allow create, update: if esAdmin()
                     && request.resource.data.keys().hasOnly([
                          'codigo', 'descripcion', 'modelo', 'cliente', 'pares_requeridos',
@@ -305,7 +324,9 @@ service cloud.firestore {
     // ── catalogo_meta/info: última importación. Su importId es lo que
     // invalida la caché de autollenado en todos los dispositivos.
     match /catalogo_meta/{docId} {
-      allow read: if tieneUsuarioActivo();
+      // Mismo criterio que catalogo/: solo lo consume watchCatalogo() en
+      // admin.js (pantalla de Lety).
+      allow read: if esAdmin();
       allow write: if esAdmin()
                    && docId == 'info'
                    && request.resource.data.keys().hasOnly(['filas_importadas', 'total_archivo', 'fuente', 'importId', 'actualizado'])
