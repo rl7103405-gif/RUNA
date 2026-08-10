@@ -6,6 +6,62 @@ import { showFirma } from './firma.js';
 import { loadDB } from './dashboard.js';
 import { lookupCodigo, normalizarCodigo, watchCatalogo } from './catalogo.js';
 
+// ── Cierre de la tarea (el desarrollo completo) ──
+// Un desarrollo es un pack con varios códigos; cada código es una ficha con
+// su propio cronómetro. La tarea se da por terminada cuando Lety aprobó el
+// último código, y `terminado_en` mide cuánto tardó el pack de punta a punta.
+//
+// Es una RECONCILIACIÓN, no un "marcar y ya": recalcula el estado real y lo
+// corrige en los dos sentidos. Así, si la escritura falla o alguien reabre una
+// ficha ya aprobada, el siguiente paso de Lety devuelve la tarea a en_proceso
+// sola. La alternativa (escribir 'terminado' una sola vez tras aprobar) deja
+// la tarea colgada para siempre si esa escritura se pierde.
+//
+// Solo la llama Lety: las reglas no dejan al muestrista cerrar su propia tarea.
+export async function reconciliarEstadoTarea(devId) {
+  if (!fsOk() || !devId) return;
+  try {
+    const devRef = db.collection('desarrollos').doc(devId);
+    const devSnap = await devRef.get();
+    if (!devSnap.exists) return;
+    const dev = devSnap.data();
+    const codigos = dev.variante_codigos || [];
+    // Sin variantes no hay nada que cerrar: `[].every()` daría true y cerraría
+    // una tarea vacía.
+    if (codigos.length === 0) return;
+
+    const capsSnap = await db.collection('capturas').where('id_desarrollo', '==', devId).get();
+    const caps = capsSnap.docs.map(d => d.data());
+    // Un código está listo solo si NINGUNA de sus fichas sigue en manos de
+    // alguien (una variante aprobada puede recapturarse) y al menos una quedó
+    // aprobada. Es el mismo criterio que usa varStatus() en la vista del
+    // muestrista, para que pantalla y documento nunca se contradigan.
+    const listo = codigos.every(cod => {
+      const suyas = caps.filter(c => c.codigo_variante === cod);
+      if (suyas.length === 0) return false;
+      if (suyas.some(c => ['activo', 'pausado', 'correccion', 'pendiente_lety'].includes(c.estado))) return false;
+      return suyas.some(c => c.estado === 'aprobado');
+    });
+
+    if (listo && dev.estado === 'en_proceso') {
+      await devRef.update({ estado: 'terminado', terminado_en: firebase.firestore.FieldValue.serverTimestamp() });
+    } else if (!listo && dev.estado === 'terminado') {
+      // Lety reabrió una ficha: la tarea vuelve a estar en curso y el sello de
+      // cierre se limpia para no dejar una fecha de término mentirosa.
+      await devRef.update({ estado: 'en_proceso', terminado_en: null });
+    }
+  } catch (e) {
+    // La aprobación de la ficha YA quedó guardada, así que esto nunca se
+    // reporta como un error de firma. Pero sí se avisa: si el que falló fue el
+    // cierre de la ÚLTIMA ficha, no hay una aprobación siguiente que lo
+    // reintente y la tarea se quedaría en_proceso para siempre, aunque en
+    // pantalla se vea completa. Con el aviso, Lety puede reabrir y volver a
+    // aprobar una ficha para forzar el recálculo.
+    console.error('reconciliarEstadoTarea:', e);
+    toast('La ficha se guardó, pero no se pudo cerrar la tarea — avisa a Roberto', false);
+  }
+}
+
 export function ltTab(i, btn) {
   [0, 1, 2, 3].forEach(j => document.getElementById('lt' + j).classList.remove('on'));
   document.getElementById('lt' + i).classList.add('on');
@@ -124,15 +180,22 @@ export async function addVar() {
   // startCap identifica la variante por código: repetirlo colapsaría dos
   // variantes en una sola captura
   if (APP.vars.some(v => v.codigo === cod)) { toast('Ya agregaste una variante con ese código', false); return; }
-  APP.vars.push({ codigo: cod, descripcion: gv('vd').trim(), pares_requeridos: gv('vp').trim(), tipo_pack: gv('vpk').trim() });
+  // `complejidad` NO viaja en el documento público: se separa al asignar y se
+  // guarda en desarrollos_privado, donde el muestrista no la puede leer.
+  APP.vars.push({
+    codigo: cod, descripcion: gv('vd').trim(), pares_requeridos: gv('vp').trim(),
+    tipo_pack: gv('vpk').trim(), complejidad: gv('vcx') || 'A',
+  });
   ['vc', 'vd', 'vp', 'vpk'].forEach(id => { document.getElementById(id).value = ''; });
+  const vcx = document.getElementById('vcx');
+  if (vcx) vcx.value = 'A';
   renderVars();
 }
 
 function renderVars() {
   document.getElementById('vlist').innerHTML = APP.vars.map((v, i) => `
     <div class="vi">
-      <div style="flex:1"><div class="vcod">${es(v.codigo)}</div><div style="font-size:12px;color:var(--tx2)">${es(v.descripcion)} · ${es(v.pares_requeridos)} pares · ${es(v.tipo_pack)}</div></div>
+      <div style="flex:1"><div class="vcod">${es(v.codigo)} <span class="bge" style="font-size:10px">${es(v.complejidad || 'A')}</span></div><div style="font-size:12px;color:var(--tx2)">${es(v.descripcion)} · ${es(v.pares_requeridos)} pares · ${es(v.tipo_pack)}</div></div>
       <button data-rmvar="${i}" style="background:none;border:none;color:var(--rd);font-size:18px;cursor:pointer;padding:4px">✕</button>
     </div>`).join('');
 }
@@ -152,11 +215,18 @@ export async function asignar() {
     if (APP.asignMode === 'single') {
       const cod = gv('s-cod').trim();
       if (!cod) { toast('Ingresa el código de variante', false); return; }
-      variantes = [{ codigo: cod, descripcion: gv('s-desc').trim(), pares_requeridos: gv('s-pares').trim(), tipo_pack: gv('s-pack').trim() }];
+      // Código único: la complejidad del código es la misma del desarrollo
+      variantes = [{ codigo: cod, descripcion: gv('s-desc').trim(), pares_requeridos: gv('s-pares').trim(), tipo_pack: gv('s-pack').trim(), complejidad: gv('l-comp') }];
     } else {
       if (APP.vars.length === 0) { toast('Agrega al menos una variante', false); return; }
       variantes = [...APP.vars];
     }
+    // La complejidad de cada código se SEPARA del documento público: viaja al
+    // espejo privado, que solo lee Lety. Si se quedara dentro de `variantes`,
+    // el muestrista la leería junto con su tarea.
+    const complejidadPorCodigo = {};
+    variantes.forEach(v => { complejidadPorCodigo[v.codigo] = v.complejidad || 'A'; });
+    variantes = variantes.map(({ complejidad, ...publico }) => publico);
     const devRef = db.collection('desarrollos').doc();
     const privRef = db.collection('desarrollos_privado').doc(devRef.id);
     const batch = db.batch();
@@ -170,7 +240,10 @@ export async function asignar() {
       fecha_creacion: firebase.firestore.FieldValue.serverTimestamp(),
       creado_por: APP.user.id,
     });
-    batch.set(privRef, { tipo_complejidad: gv('l-comp') });
+    batch.set(privRef, {
+      tipo_complejidad: gv('l-comp'),
+      complejidad_por_codigo: complejidadPorCodigo,
+    });
     await batch.commit();
     APP.vars = [];
     renderVars();
@@ -306,11 +379,15 @@ export function aprobar() {
 // esperado (una pantalla vieja no puede pisar un cambio más reciente)
 async function transicion(capId, esperado, cambios) {
   const ref = db.collection('capturas').doc(capId);
+  let devId = null;
   await db.runTransaction(async tx => {
     const snap = await tx.get(ref);
     if (!snap.exists || snap.data().estado !== esperado) throw new Error('estado-cambiado');
+    devId = snap.data().id_desarrollo || null;
     tx.update(ref, cambios);
   });
+  // Se devuelve para poder recalcular después si la tarea sigue terminada
+  return devId;
 }
 
 export function rechazar() {
@@ -321,8 +398,10 @@ export function rechazar() {
     async () => {
       if (!fsOk()) return;
       try {
-        await transicion(APP.revCap, 'pendiente_lety', { estado: 'correccion', firma_m: null });
+        const devId = await transicion(APP.revCap, 'pendiente_lety', { estado: 'correccion', firma_m: null });
         toast('Corrección solicitada');
+        // La tarea deja de estar completa (esta ficha vuelve al muestrista)
+        if (devId) reconciliarEstadoTarea(devId);
       } catch (e) {
         console.error(e);
         toast(e && e.message === 'estado-cambiado'
@@ -345,8 +424,11 @@ export function reabrirFicha() {
     async () => {
       if (!fsOk()) return;
       try {
-        await transicion(APP.revCap, 'aprobado', { estado: 'pendiente_lety', firma_l: null });
+        const devId = await transicion(APP.revCap, 'aprobado', { estado: 'pendiente_lety', firma_l: null });
         toast('Ficha reabierta — pendiente de revisión');
+        // Si la tarea ya estaba cerrada, vuelve a abrirse y se limpia su
+        // fecha de término (ver reconciliarEstadoTarea)
+        if (devId) reconciliarEstadoTarea(devId);
       } catch (e) {
         console.error(e);
         toast(e && e.message === 'estado-cambiado'

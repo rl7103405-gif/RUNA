@@ -92,7 +92,17 @@ function renderTarea(devId, d) {
     <div class="ds">${es(d.tipo_producto || '')} · ${es(d.genero)} ${es(d.talla)}</div>
     <div style="font-size:11px;color:var(--tx2);margin:4px 0">OT ${es(d.ot)} · PO ${es(d.po)}</div>
     ${d.notas ? `<div class="al ali" style="margin:8px 0"><span>📌</span><span style="font-size:12px">${es(d.notas)}</span></div>` : ''}
-    <div class="stitle" style="margin-top:10px">Variantes</div>
+    <div class="stitle" style="margin-top:10px">Variantes ${(() => {
+      // Progreso del pack: cada código es una "minitarea" y la tarea completa
+      // se cierra cuando Lety aprueba la última. Un pack de 5 piezas con 2
+      // diseños distintos son 2 códigos, o sea 2 minitareas — no 5.
+      const listas = sts.filter(s => s === 'aprobada').length;
+      // Con un solo código no hay "progreso" que mostrar. El caso "todas
+      // listas" tampoco se pinta nunca: la tarjeta entera ya desapareció
+      // arriba cuando eso pasa (la tarea está terminada).
+      if (vars.length <= 1) return '';
+      return `<span class="bge bpend" style="font-size:11px">${listas} de ${vars.length} listas</span>`;
+    })()}</div>
     ${vars.map((v, i) => {
       const st = sts[i];
       let accion;

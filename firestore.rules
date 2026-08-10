@@ -93,9 +93,10 @@ service cloud.firestore {
     function estadoCapturaValido(e) {
       return e in ['activo', 'pausado', 'pendiente_lety', 'correccion', 'aprobado'];
     }
-    function estadoDesarrolloValido(e) {
-      return e in ['pendiente', 'en_proceso'];
-    }
+    // Los estados válidos de un desarrollo son 'pendiente', 'en_proceso' y
+    // 'terminado', pero cada transición vive en su propia rama del `update`
+    // de /desarrollos (ver abajo). Aquí solo se valida el nacimiento: una
+    // tarea siempre arranca pendiente, nunca ya terminada.
     // Firma: ausente, null, o data-URL PNG bien formado (la app solo
     // renderiza este formato; bloquea payloads de XSS almacenado)
     function firmaOk(data, campo) {
@@ -103,6 +104,19 @@ service cloud.firestore {
         || (data[campo] is string
             && data[campo].size() < 300000
             && data[campo].matches('data:image/png;base64,[A-Za-z0-9+/=]+'));
+    }
+    // Complejidad por variante: map {codigo: 'A'|'B'|'C'} en el doc privado.
+    // El campo es opcional (los desarrollos viejos no lo traen). Se valida que
+    // las llaves sean códigos REALES de este desarrollo, leyéndolos del
+    // documento público. Se usa getAfter porque en el alta ese documento nace
+    // en el mismo batch; en un update devuelve lo mismo que get.
+    // Los VALORES no se pueden validar aquí: las reglas no iteran maps.
+    function complejidadPorCodigoOk(devId) {
+      return !('complejidad_por_codigo' in request.resource.data)
+        || (request.resource.data.complejidad_por_codigo is map
+            && request.resource.data.complejidad_por_codigo.keys().size() <= 40
+            && request.resource.data.complejidad_por_codigo.keys().hasOnly(
+                 getAfter(/databases/$(database)/documents/desarrollos/$(devId)).data.variante_codigos));
     }
     // Tiempos coherentes: números no negativos, TM nunca mayor que el bruto
     function tiemposOk(data) {
@@ -131,43 +145,89 @@ service cloud.firestore {
                     && request.resource.data.modelo is string
                     && request.resource.data.modelo.size() > 0
                     && esMuestristaId(request.resource.data.asignado_a)
-                    && estadoDesarrolloValido(request.resource.data.estado)
+                    && request.resource.data.estado == 'pendiente'
                     && !('tipo_complejidad' in request.resource.data)
                     && existsAfter(/databases/$(database)/documents/desarrollos_privado/$(devId))
+                    // OJO: las reglas no pueden inspeccionar los elementos de
+                    // una lista, así que aquí NO se puede impedir que una
+                    // variante traiga dentro su `complejidad`. Ese dato es
+                    // secreto (el muestrista lee este documento completo) y el
+                    // único candado real está en el cliente: `asignar()` lo
+                    // separa hacia desarrollos_privado antes de escribir. Si
+                    // tocas asignar(), no quites ese filtrado.
                     && request.resource.data.variantes is list
                     && request.resource.data.variantes.size() > 0
                     && request.resource.data.variante_codigos is list
                     && request.resource.data.variante_codigos.size() > 0
                     && request.resource.data.creado_por == miEmpleadoId();
-      // La app solo cambia `estado` (Lety al asignar; el muestrista al
-      // iniciar una captura); los campos sensibles son inmutables para todos.
-      // Además, solo el admin o el muestrista dueño real de la tarea puede
-      // tocarla (mismo patrón que capturas más abajo).
-      allow update: if (esAdmin() || (esMuestristaActual() && miEmpleadoId() == resource.data.asignado_a))
-                    && estadoDesarrolloValido(request.resource.data.estado)
-                    && request.resource.data.get('tipo_complejidad', '') == resource.data.get('tipo_complejidad', '')
-                    && request.resource.data.get('asignado_a', '') == resource.data.get('asignado_a', '')
-                    && request.resource.data.get('variantes', []) == resource.data.get('variantes', [])
-                    && request.resource.data.get('variante_codigos', []) == resource.data.get('variante_codigos', [])
-                    && request.resource.data.get('creado_por', '') == resource.data.get('creado_por', '')
-                    // El único update legítimo (Lety al asignar, o el
-                    // muestrista al iniciar captura) solo toca 'estado'; los
-                    // == de arriba ya congelan los campos sensibles conocidos,
-                    // pero no impedían agregar campos nuevos. hasOnly cierra
-                    // ese hueco por completo.
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado']);
+      // Máquina de estados del desarrollo (la "tarea"):
+      //
+      //   pendiente --muestrista inicia su 1ª captura--> en_proceso
+      //   en_proceso --Lety aprueba el último código---> terminado
+      //   terminado  --Lety reabre una ficha aprobada--> en_proceso
+      //
+      // Cada transición es su propia rama, atada al rol que puede hacerla.
+      // NO basta con `esAdmin() || esMuestristaDueño()` + hasOnly: eso dejaría
+      // al muestrista declarar terminada su propia tarea sin que Lety apruebe
+      // nada (y el cierre alimenta las métricas de tiempo por tarea).
+      // Los campos sensibles quedan congelados por el hasOnly de cada rama.
+      allow update: if
+        // ── El muestrista dueño solo arranca la tarea al iniciar una captura.
+        (esMuestristaActual()
+         && miEmpleadoId() == resource.data.asignado_a
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado'])
+         && resource.data.estado in ['pendiente', 'en_proceso']
+         && request.resource.data.estado == 'en_proceso')
+        // ── Lety mueve entre pendiente y en_proceso. Exige el estado de
+        // ORIGEN: sin eso se podría saltar de 'terminado' a 'en_proceso' por
+        // aquí, esquivando la rama de reapertura y dejando un `terminado_en`
+        // viejo en una tarea que ya no está cerrada.
+        || (esAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado'])
+            && resource.data.estado in ['pendiente', 'en_proceso']
+            && request.resource.data.estado in ['pendiente', 'en_proceso'])
+        // ── Lety cierra la tarea. El sello de tiempo lo pone el servidor
+        // (serverTimestamp() == request.time), no el cliente: es la medida de
+        // cuánto tardó la tarea completa.
+        || (esAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'terminado_en'])
+            && resource.data.estado == 'en_proceso'
+            && request.resource.data.estado == 'terminado'
+            && request.resource.data.terminado_en == request.time)
+        // ── Lety reabre una tarea cerrada (rechazó una ficha ya aprobada):
+        // el sello se limpia para que no quede una fecha de cierre mentirosa.
+        || (esAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'terminado_en'])
+            && resource.data.estado == 'terminado'
+            && request.resource.data.estado == 'en_proceso'
+            && request.resource.data.get('terminado_en', null) == null);
       allow delete: if false;
     }
 
     // ── desarrollos_privado: datos exclusivos de admin (tipo_complejidad).
     // Documento espejo 1:1 de desarrollos/{devId}, mismo id, creado junto
     // con el público en el mismo batch (ver admin.js asignar()).
+    // Desde 2026-08-10 guarda DOS cosas: `tipo_complejidad` (la del desarrollo
+    // completo, que se conserva) y `complejidad_por_codigo`, un map
+    // {codigo: 'A'|'B'|'C'} con la complejidad de cada variante del pack.
+    //
+    // LÍMITE CONOCIDO: las reglas no pueden iterar un map, así que NO se puede
+    // validar aquí que cada valor sea A/B/C — solo que las llaves sean códigos
+    // reales de este desarrollo (contra el doc público) y que el map no crezca
+    // sin control. Los valores los valida el cliente. Es aceptable porque la
+    // única que escribe aquí es Lety (admin), no un rol de piso.
     match /desarrollos_privado/{devId} {
       allow read: if esAdmin();
       allow create: if esAdmin()
-                    && request.resource.data.keys().hasOnly(['tipo_complejidad'])
+                    && request.resource.data.keys().hasOnly(['tipo_complejidad', 'complejidad_por_codigo'])
                     && request.resource.data.tipo_complejidad in ['A', 'B', 'C']
+                    && complejidadPorCodigoOk(devId)
                     && existsAfter(/databases/$(database)/documents/desarrollos/$(devId));
+      // Sigue siendo inmutable: hoy la app no tiene forma de editar un
+      // desarrollo ya asignado (ni el público ni este), así que abrir `update`
+      // solo ampliaría la superficie de escritura sin que nadie la use. Si
+      // algún día se agrega "corregir complejidad" en la vista de Lety, esta
+      // regla se abre JUNTO con esa pantalla, no antes.
       allow update, delete: if false;
     }
 
@@ -213,7 +273,11 @@ service cloud.firestore {
                     // asignado al desarrollo, y la variante debe pertenecer
                     // realmente a ese desarrollo (evita fichas fraudulentas)
                     && get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.asignado_a == miEmpleadoId()
-                    && request.resource.data.codigo_variante in get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.variante_codigos;
+                    && request.resource.data.codigo_variante in get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.variante_codigos
+                    // No se abren fichas de una tarea ya cerrada: si Lety la
+                    // dio por terminada, primero tiene que reabrirla. Si no,
+                    // una captura nueva quedaría colgando de una tarea muerta.
+                    && get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.get('estado', '') != 'terminado';
       allow update: if estadoCapturaValido(request.resource.data.estado)
                     // El dueño, el desarrollo de origen y la variante no se reasignan
                     && request.resource.data.id_muestrista == resource.data.id_muestrista

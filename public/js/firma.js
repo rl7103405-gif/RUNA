@@ -91,21 +91,29 @@ export async function saveSig() {
       // Transacción: solo se aprueba si la ficha SIGUE pendiente (evita
       // aprobar desde una pantalla vieja una ficha que ya cambió de estado)
       const ref = db.collection('capturas').doc(capturaId);
+      // Se guarda de qué desarrollo es la ficha para poder cerrar la tarea
+      // después. Se asigna dentro de la transacción (que puede reintentarse):
+      // gana el último intento, que es el que efectivamente escribió.
+      let devId = null;
       await db.runTransaction(async tx => {
         const snap = await tx.get(ref);
         if (!snap.exists || snap.data().estado !== 'pendiente_lety') {
           throw new Error('estado-cambiado');
         }
+        devId = snap.data().id_desarrollo || null;
         tx.update(ref, { firma_l: url, estado: 'aprobado' });
       });
       APP.sigData = null;
       scr('sL');
       showExito('Ficha aprobada', APP.revFolio || 'Ficha anterior · sin folio');
-      // El refresco de listas va aparte: si falla, la aprobación YA quedó
-      // guardada y no debe reportarse como error de firma
+      // El refresco de listas y el cierre de la tarea van aparte: si fallan,
+      // la aprobación YA quedó guardada y no debe reportarse como error de
+      // firma. El cierre se reintenta solo en la siguiente aprobación.
       try {
-        const { loadRev } = await import('./admin.js');
+        const { loadRev, reconciliarEstadoTarea } = await import('./admin.js');
         loadRev();
+        // Si esta era la última ficha del pack, la tarea se marca terminada.
+        if (devId) reconciliarEstadoTarea(devId);
       } catch (e2) { console.error(e2); }
     }
   } catch (e) {
