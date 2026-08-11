@@ -83,9 +83,15 @@ async function submitPin() {
     // un PIN incorrecto: se avisa distinto para no confundir al operador.
     const perfil = await db.collection('usuarios').doc(auth.currentUser.uid).get();
     if (!perfil.exists || perfil.data().empleadoId !== uid) {
-      console.error('usuarios/{uid} no coincide con el empleado esperado:', uid, perfil.data());
+      // Se muestra el UID: sin él, quien tiene que arreglarlo no sabe QUÉ
+      // documento crear en la consola de Firebase, y el aviso es inútil.
+      const authUid = auth.currentUser.uid;
+      console.error(
+        'Falta el perfil de este usuario. Crea el documento usuarios/' + authUid +
+        ' con { empleadoId: "' + uid + '", rol: "' + (uid === 'lety' ? 'admin' : 'muestrista') + '", activo: true }.',
+        'Perfil encontrado:', perfil.exists ? perfil.data() : '(no existe)');
       await auth.signOut().catch(() => {});
-      mostrarError(uid, 'Cuenta mal configurada — avisa a Roberto');
+      mostrarError(uid, 'Falta registrar esta cuenta. Avísale a Roberto: usuarios/' + authUid);
       return;
     }
     // Baja de personal: `activo: false` en el perfil. Las reglas de Firestore
