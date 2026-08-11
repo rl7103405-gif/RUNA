@@ -22,3 +22,7 @@ Thumbs.db
 # Temporales
 *.tmp
 *.bak
+
+# Fichas técnicas de ejemplo (datos reales de producto, no van al repo)
+*.xlsx
+*.xls

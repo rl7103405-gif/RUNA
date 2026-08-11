@@ -135,11 +135,18 @@
     <!-- ASIGNAR -->
     <div id="lt0" class="tp on">
       <div class="stitle">Nuevo desarrollo</div>
-      <div class="mode-sel">
+      <div class="mode-sel" style="grid-template-columns:1fr 1fr 1fr">
+        <button class="ms-btn" id="ms-ficha" onclick="setMode('ficha')">📄 Ficha técnica</button>
         <button class="ms-btn on" id="ms-single" onclick="setMode('single')">📌 Código único</button>
-        <button class="ms-btn" id="ms-pack" onclick="setMode('pack')">📦 Pack con variantes</button>
+        <button class="ms-btn" id="ms-pack" onclick="setMode('pack')">📦 Pack</button>
       </div>
-      <div class="fsec">
+      <!-- MODO FICHA TÉCNICA: todo sale del Excel -->
+      <div id="form-ficha" style="display:none">
+        <div class="al ali"><span>📄</span><span style="font-size:12px">Sube el Excel de fichas técnicas (una hoja por variante). La app saca modelo, cliente, máquina, medidas, giros, velocidades y tolerancias; tú solo eliges muestrista, pares y complejidad.</span></div>
+        <div class="fg"><input class="fi" type="file" id="ft-file" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="ftArchivo(this)"></div>
+        <div id="ft-ui"></div>
+      </div>
+      <div class="fsec" id="form-datos">
         <div class="ftitle">Datos del pedido</div>
         <div class="g2">
           <div class="fg"><label class="fl">OT</label><input class="fi" id="l-ot" placeholder="7735"></div>
@@ -207,8 +214,10 @@
           <button class="btn btn-bl btn-sm" style="width:100%;margin-top:8px" onclick="addVar()">+ Agregar variante</button>
         </div>
       </div>
-      <div class="al alw"><span>⚠️</span><span style="font-size:12px">La complejidad <strong>NO</strong> es visible para los muestristas.</span></div>
-      <button class="btn btn-am" onclick="asignar()">✓ Asignar desarrollo</button>
+      <div id="form-submit">
+        <div class="al alw"><span>⚠️</span><span style="font-size:12px">La complejidad <strong>NO</strong> es visible para los muestristas.</span></div>
+        <button class="btn btn-am" onclick="asignar()">✓ Asignar desarrollo</button>
+      </div>
     </div>
     <!-- REVISAR -->
     <div id="lt1" class="tp">

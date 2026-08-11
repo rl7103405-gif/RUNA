@@ -231,6 +231,30 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── fichas técnicas (subcolección PRIVADA de cada desarrollo) ──
+    // Son los valores OBJETIVO que Lety importa del Excel corporativo
+    // (F.T.T.): medidas con tolerancia, giros, velocidades, pesos, punto de
+    // máquina, materiales.
+    //
+    // Solo las lee el admin, A PROPÓSITO: la captura del muestrista debe ser
+    // ciega. Si el objetivo viajara a su dispositivo, podría leerlo con las
+    // herramientas del navegador y capturar el número esperado en vez del que
+    // midió — y la comparación dejaría de significar nada. Por eso la
+    // comparación objetivo-vs-real se hace en la pantalla de revisión de
+    // Lety, que sí puede leer ambos documentos.
+    //
+    // Inmutables: cambiar un objetivo después de una captura reescribiría el
+    // pasado (una ficha aprobada pasaría a estar "fuera de tolerancia" sin que
+    // nadie tocara la medición). Una corrección se sube como desarrollo nuevo.
+    match /desarrollos_privado/{devId}/fichas_tecnicas/{codigo} {
+      allow read: if esAdmin();
+      allow create: if esAdmin()
+                    && request.resource.data.codigo == codigo
+                    && request.resource.data.id_desarrollo == devId
+                    && codigo.size() > 0 && codigo.size() <= 60;
+      allow update, delete: if false;
+    }
+
     // ── capturas: fichas prácticas (una por variante) ──
     match /capturas/{capId} {
       // Misma segmentación que desarrollos: Lety todo, el muestrista solo sus

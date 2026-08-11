@@ -3,7 +3,7 @@
 // v5: catálogo importable desde Excel, exportación a .xlsx y contador de
 // pendientes. SheetJS/ExcelJS NO se precachean (pesan ~1 MB cada una): se
 // descargan solo cuando Lety usa esas funciones y quedan en cache de runtime.
-const CACHE = 'quini-muestristas-v5';
+const CACHE = 'quini-muestristas-v6';
 
 const APP_SHELL = [
   './',
@@ -22,6 +22,7 @@ const APP_SHELL = [
   'js/dashboard.js',
   'js/catalogo.js',
   'js/export.js',
+  'js/ficha-tecnica.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-180.png',

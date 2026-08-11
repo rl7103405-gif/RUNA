@@ -1,7 +1,8 @@
 // Vista de Lety: asignación de desarrollos y revisión/aprobación de fichas
 import { db, fsOk } from './fb.js';
 import { APP, USERS, TM_CAUSES } from './state.js';
-import { es, fmt, fmtMin, fmtDate, gv, scr, toast, confirmDlg, tenFromDoc, esFirmaValida } from './utils.js';
+import { es, fmt, fmtMin, fmtDate, gv, scr, toast, confirmDlg, tenFromDoc, esFirmaValida, loadLib, showExito } from './utils.js';
+import { parseLibro, comparar } from './ficha-tecnica.js';
 import { showFirma } from './firma.js';
 import { loadDB } from './dashboard.js';
 import { lookupCodigo, normalizarCodigo, watchCatalogo } from './catalogo.js';
@@ -111,10 +112,176 @@ export function setBadgePendientes(n) {
 // ── Asignar ──
 export function setMode(mode) {
   APP.asignMode = mode;
-  document.getElementById('ms-single').classList.toggle('on', mode === 'single');
-  document.getElementById('ms-pack').classList.toggle('on', mode === 'pack');
-  document.getElementById('form-single').style.display = mode === 'single' ? '' : 'none';
-  document.getElementById('form-pack').style.display = mode === 'pack' ? '' : 'none';
+  ['ficha', 'single', 'pack'].forEach(m => {
+    const b = document.getElementById('ms-' + m);
+    if (b) b.classList.toggle('on', mode === m);
+  });
+  const ver = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+  ver('form-ficha', mode === 'ficha');
+  ver('form-single', mode === 'single');
+  ver('form-pack', mode === 'pack');
+  // En modo ficha técnica los datos del pedido salen del Excel: solo se pide
+  // lo que el archivo no trae (muestrista, pares y complejidad)
+  ver('form-datos', mode !== 'ficha');
+  // El banner de complejidad y el botón "Asignar desarrollo" no aplican en
+  // modo ficha técnica (ese modo tiene su propio botón "Crear tarea")
+  ver('form-submit', mode !== 'ficha');
+  if (mode === 'ficha') {
+    // Limpia el estado de los otros modos: que no quede nada fantasma que
+    // asignar() pudiera usar si el botón se llegara a colar
+    APP.vars = [];
+    renderVars();
+    ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-gen', 'l-tal', 'l-tprod', 'l-notas', 's-cod', 's-desc', 's-pares', 's-pack', 'vc', 'vd', 'vp', 'vpk'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+  }
+}
+
+// ── Crear tarea desde la ficha técnica (Excel) ──
+const SHEETJS_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+let FT = { fichas: [], errores: [], archivo: '' };
+
+export async function ftArchivo(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const ui = document.getElementById('ft-ui');
+  if (file.size > 12 * 1024 * 1024) { toast('El archivo pesa más de 12 MB', false); input.value = ''; return; }
+  FT = { fichas: [], errores: [], archivo: file.name };
+  ui.innerHTML = '<div class="al ali"><span>⏳</span><span style="font-size:12px">Leyendo la ficha técnica…</span></div>';
+  try {
+    await loadLib(SHEETJS_URL, 'XLSX');
+    const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: true, cellText: true, raw: false });
+    const { fichas, errores } = parseLibro(wb, XLSX);
+    FT.fichas = fichas; FT.errores = errores;
+    renderFichas();
+  } catch (e) {
+    console.error('ficha tecnica:', e);
+    ui.innerHTML = '<div class="al alr"><span>⚠️</span><span style="font-size:12px">No se pudo leer el archivo. Debe ser el Excel de fichas técnicas (.xlsx), con una hoja por variante.</span></div>';
+  }
+}
+
+function renderFichas() {
+  const ui = document.getElementById('ft-ui');
+  const { fichas, errores } = FT;
+  if (fichas.length === 0) {
+    ui.innerHTML = `<div class="al alr"><span>⚠️</span><span style="font-size:12px">No se encontró ninguna ficha con código. Revisa que el archivo sea el de fichas técnicas llenas (la plantilla vacía no sirve).${errores.length ? ' Hojas revisadas: ' + es(errores.map(e => e.hoja).join(', ')) : ''}</span></div>`;
+    return;
+  }
+  const f0 = fichas[0];
+  const mismoModelo = fichas.every(f => f.modelo === f0.modelo && f.cliente === f0.cliente);
+  // Validaciones ANTES de dejar que Lety llene el formulario: si algo bloquea,
+  // no se pinta el botón de crear.
+  const demasiadas = fichas.length > 40;
+  const vistos = new Set();
+  const duplicados = new Set();
+  fichas.forEach(f => {
+    if (vistos.has(f.codigo)) duplicados.add(f.codigo); else vistos.add(f.codigo);
+  });
+  const bloqueado = demasiadas || duplicados.size > 0;
+  ui.innerHTML = `
+    <div class="card bl">
+      <div class="dt">${es(f0.modelo)} · ${es(f0.cliente)}</div>
+      <div class="ds">${es(f0.marca)} · ${es(f0.tipo_producto)} · Talla ${es(f0.talla)}</div>
+      <div class="mr"><span>Máquina ${es(f0.maquina_marca)} #${es(f0.maquina_numero)}</span><span>${es(f0.agujas)} agujas · Ø ${es(f0.diametro)}</span></div>
+    </div>
+    ${!mismoModelo ? '<div class="al alw"><span>⚠️</span><span style="font-size:12px">Las hojas tienen modelo o cliente distintos. Se creará UNA tarea con el modelo de la primera hoja; si son desarrollos diferentes, súbelos por separado.</span></div>' : ''}
+    ${errores.length ? `<div class="al alw"><span>ℹ️</span><span style="font-size:12px">Hojas omitidas por no tener código: ${es(errores.map(e => e.hoja).join(', '))}</span></div>` : ''}
+    ${demasiadas ? `<div class="al alr"><span>⚠️</span><span style="font-size:12px">El archivo trae ${fichas.length} variantes y el máximo por tarea es 40. Divide el pack en dos archivos.</span></div>` : ''}
+    ${duplicados.size ? `<div class="al alr"><span>⚠️</span><span style="font-size:12px">Códigos repetidos entre hojas: ${es([...duplicados].join(', '))}. Corrige el archivo antes de continuar.</span></div>` : ''}
+    <div class="stitle">${fichas.length} variante${fichas.length === 1 ? '' : 's'} detectada${fichas.length === 1 ? '' : 's'}</div>
+    ${fichas.map((f, i) => `<div class="vi">
+      <div style="flex:1">
+        <div class="vcod">${es(f.codigo)}</div>
+        <div style="font-size:12px;color:var(--tx2)">${es(f.color_base || '—')} · medidas ${es(['A','B','C','D','E'].filter(k => f.med_sh[k]).length)}/5 · giros ${es(Object.values(f.giros).filter(Boolean).length)}/4</div>
+      </div>
+      <div style="width:110px;flex-shrink:0">
+        <input class="fi" type="number" min="0" placeholder="pares" data-ftpares="${i}" style="padding:8px 10px;font-size:14px">
+      </div>
+      <select class="fi" data-ftcx="${i}" style="width:70px;flex-shrink:0;padding:8px 6px;font-size:14px">
+        <option value="A">A</option><option value="B">B</option><option value="C">C</option>
+      </select>
+    </div>`).join('')}
+    ${bloqueado ? '' : `
+    <div class="fg" style="margin-top:10px"><label class="fl">Asignar a</label>
+      <select class="fi" id="ft-asig"><option value="israel">Israel</option><option value="jesus">Jesús</option></select></div>
+    <div class="g2">
+      <div class="fg"><label class="fl">OT</label><input class="fi" id="ft-ot" placeholder="7735"></div>
+      <div class="fg"><label class="fl">PO</label><input class="fi" id="ft-po" placeholder="2422"></div>
+    </div>
+    <div class="fg"><label class="fl">Notas para el muestrista</label><textarea class="fi" id="ft-notas" rows="2" placeholder="Instrucciones especiales..."></textarea></div>
+    <div class="al ali"><span>🔒</span><span style="font-size:12px">A = tin básico · B = con diseño · C = jacquard. La complejidad solo la ves tú.</span></div>
+    <button class="btn btn-am" id="ft-go" onclick="asignarDesdeFicha()">✓ Crear tarea con ${fichas.length} ficha${fichas.length === 1 ? '' : 's'}</button>`}`;
+}
+
+let asignandoFT = false;
+
+export async function asignarDesdeFicha() {
+  if (!fsOk() || asignandoFT) return;
+  if (!FT.fichas.length) { toast('Primero sube el archivo de fichas técnicas', false); return; }
+  asignandoFT = true;
+  const btn = document.getElementById('ft-go');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creando tarea…'; }
+  try {
+    const f0 = FT.fichas[0];
+    const pares = i => (document.querySelector(`[data-ftpares="${i}"]`) || {}).value || '';
+    const cx = i => (document.querySelector(`[data-ftcx="${i}"]`) || {}).value || 'A';
+    const variantes = FT.fichas.map((f, i) => ({
+      codigo: f.codigo,
+      descripcion: f.color_base || f.modelo || '',
+      pares_requeridos: String(pares(i)).trim(),
+      tipo_pack: '',
+    }));
+    const complejidadPorCodigo = {};
+    FT.fichas.forEach((f, i) => { complejidadPorCodigo[f.codigo] = cx(i); });
+
+    const devRef = db.collection('desarrollos').doc();
+    const privRef = db.collection('desarrollos_privado').doc(devRef.id);
+    const batch = db.batch();
+    batch.set(devRef, {
+      ot: gv('ft-ot'), po: gv('ft-po'), codigo_quini: f0.codigo,
+      modelo: f0.modelo || '(sin modelo)', cliente: f0.cliente || '',
+      genero: '', talla: f0.talla || '', tipo_producto: f0.tipo_producto || '',
+      asignado_a: gv('ft-asig') || 'israel',
+      notas: gv('ft-notas'), variantes, variante_codigos: variantes.map(v => v.codigo),
+      estado: 'pendiente',
+      origen: 'ficha_tecnica',
+      fecha_creacion: firebase.firestore.FieldValue.serverTimestamp(),
+      creado_por: APP.user.id,
+    });
+    batch.set(privRef, {
+      tipo_complejidad: cx(0),
+      complejidad_por_codigo: complejidadPorCodigo,
+    });
+    // Una ficha técnica por variante, en la subcolección PRIVADA del
+    // desarrollo: son los valores objetivo y solo Lety puede leerlos, para
+    // que la captura del muestrista sea ciega de verdad (ver firestore.rules)
+    FT.fichas.forEach(f => {
+      const { hoja, codigo_raw, ...datos } = f;
+      batch.set(privRef.collection('fichas_tecnicas').doc(f.codigo), {
+        ...datos, id_desarrollo: devRef.id, hoja_origen: String(hoja || '').slice(0, 60),
+        archivo: String(FT.archivo || '').slice(0, 120),
+        creado_por: APP.user.id,
+        fecha_creacion: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    const n = FT.fichas.length;
+    FT = { fichas: [], errores: [], archivo: '' };
+    const file = document.getElementById('ft-file');
+    if (file) file.value = '';
+    document.getElementById('ft-ui').innerHTML = '';
+    ['ft-ot', 'ft-po', 'ft-notas'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    showExito('Tarea creada', n + ' ficha' + (n === 1 ? '' : 's') + ' lista' + (n === 1 ? '' : 's') + ' para el muestrista');
+  } catch (e) {
+    console.error('asignarDesdeFicha:', e);
+    toast(e && e.code === 'permission-denied'
+      ? 'Firestore rechazó la tarea — avisa a Roberto'
+      : 'Error creando la tarea — revisa tu conexión', false);
+  } finally {
+    asignandoFT = false;
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Crear tarea'; }
+  }
 }
 
 // ── Autollenado desde el catálogo ──
@@ -204,6 +371,9 @@ let asignando = false;
 
 export async function asignar() {
   if (!fsOk() || asignando) return;
+  // Defensa en profundidad: el botón vive fuera de la vista en modo ficha
+  // técnica (ver setMode), pero si algo lo colara, aquí nunca se crea nada.
+  if (APP.asignMode === 'ficha') return;
   // asignando se marca ANTES del await al lookup pendiente (y no solo antes
   // del batch) para que un doble toque durante ese await no pase el guard
   asignando = true;
@@ -310,6 +480,7 @@ export async function openRev(capturaId, readOnly = false) {
         return `<div class="mr"><span>${es(c ? c.label : cid)}${c && c.pen ? ' <span class="bge brd">cuenta en TEN</span>' : ''}</span><span>${fmtMin(s)}</span></div>`;
       }).join('');
     document.getElementById('rbody').innerHTML = `
+      <div id="rev-ft"></div>
       <div class="card ${readOnly ? 'gn' : 'bl'}">
         <div class="dt">${es(d.modelo)} · <span class="vcod">${es(d.codigo_variante)}</span>${(d.iter || 1) > 1 ? ` <span class="bge bpend">iter ${es(d.iter)}</span>` : ''}</div>
         <div class="ds">${es(d.descripcion_variante)} · ${es(d.tipo_pack)}</div>
@@ -365,7 +536,44 @@ export async function openRev(capturaId, readOnly = false) {
           </div>`}
     `;
     scr('sR');
+    renderComparacion(d, capturaId); // asíncrono: no retrasa el render de la ficha
   } catch (e) { console.error(e); toast('Error cargando revisión', false); }
+}
+
+// Comparación objetivo (ficha técnica) vs. real (lo que capturó el muestrista).
+// Solo corre aquí, en la pantalla de Lety: las reglas prohíben al muestrista
+// leer la ficha técnica, justo para que su captura sea ciega.
+async function renderComparacion(d, capId) {
+  const cont = document.getElementById('rev-ft');
+  if (!cont || !d.id_desarrollo || !d.codigo_variante) return;
+  try {
+    const snap = await db.collection('desarrollos_privado').doc(d.id_desarrollo)
+      .collection('fichas_tecnicas').doc(normalizarCodigo(d.codigo_variante)).get();
+    if (!snap.exists) return; // desarrollo capturado a mano, sin ficha técnica
+    if (APP.revCap !== capId) return; // Lety ya abrió otra ficha mientras cargaba
+    const ft = snap.data();
+    const filas = comparar(ft, d);
+    const fuera = filas.filter(f => f.fuera === true);
+    const conTol = filas.filter(f => f.fuera !== null);
+    const info = filas.filter(f => f.fuera === null && f.dif > 0);
+    const fila = f => `<div class="mr">
+      <span>${es(f.etiqueta)}</span>
+      <span style="font-family:var(--mono);font-size:12px">
+        <span style="color:var(--tx3)">${es(f.objetivo)}</span> →
+        <strong style="color:${f.fuera === true ? 'var(--rd)' : f.fuera === false ? 'var(--gn)' : 'var(--tx)'}">${es(f.real)}</strong>
+        ${f.tol !== null ? `<span class="bge ${f.fuera ? 'brd' : 'bok'}" style="margin-left:6px">${f.fuera ? '±' + es(f.tol) + ' ✕' : 'ok'}</span>` : `<span style="color:var(--tx3);margin-left:6px">Δ${es(f.dif)}</span>`}
+      </span></div>`;
+    cont.innerHTML = `
+      <div class="card ${fuera.length ? 'rd' : 'gn'}">
+        <div class="dt">${fuera.length ? '⚠️ ' + fuera.length + ' medida' + (fuera.length === 1 ? '' : 's') + ' fuera de tolerancia' : '✅ Dentro de tolerancia'}</div>
+        <div class="ds">Comparado contra la ficha técnica ${es(ft.hoja_origen || ft.codigo)}${conTol.length ? ' · ' + es(conTol.length) + ' medidas con tolerancia' : ''}</div>
+      </div>
+      ${conTol.length ? `<div class="fsec"><div class="ftitle">Medidas · objetivo → real</div>${conTol.map(fila).join('')}</div>` : ''}
+      ${info.length ? `<div class="fsec"><div class="ftitle">Otros parámetros (sin tolerancia en la ficha)</div>${info.map(fila).join('')}</div>` : ''}`;
+  } catch (e) {
+    console.error('comparacion ficha tecnica:', e);
+    cont.innerHTML = '<div class="al alw"><span>⚠️</span><span style="font-size:12px">No se pudo cargar la ficha técnica para comparar</span></div>';
+  }
 }
 
 export function aprobar() {
