@@ -5,7 +5,7 @@ import { es, fmt, fmtMin, fmtDate, gv, scr, toast, confirmDlg, tenFromDoc, esFir
 import { parseLibro, comparar } from './ficha-tecnica.js';
 import { showFirma } from './firma.js';
 import { loadDB } from './dashboard.js';
-import { lookupCodigo, normalizarCodigo, watchCatalogo } from './catalogo.js';
+import { lookupCodigo, normalizarCodigo, watchCatalogo, codigoValido } from './catalogo.js';
 
 // ── Cierre de la tarea (el desarrollo completo) ──
 // Un desarrollo es un pack con varios códigos; cada código es una ficha con
@@ -140,14 +140,14 @@ export function setMode(mode) {
 
 // ── Crear tarea desde la ficha técnica (Excel) ──
 const SHEETJS_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
-let FT = { fichas: [], errores: [], archivo: '' };
+let FT = { fichas: [], errores: [], archivo: '', filas: null };
 
 export async function ftArchivo(input) {
   const file = input.files && input.files[0];
   if (!file) return;
   const ui = document.getElementById('ft-ui');
   if (file.size > 12 * 1024 * 1024) { toast('El archivo pesa más de 12 MB', false); input.value = ''; return; }
-  FT = { fichas: [], errores: [], archivo: file.name };
+  FT = { fichas: [], errores: [], archivo: file.name, filas: null, meta: null };
   ui.innerHTML = '<div class="al ali"><span>⏳</span><span style="font-size:12px">Leyendo la ficha técnica…</span></div>';
   try {
     await loadLib(SHEETJS_URL, 'XLSX');
@@ -161,57 +161,120 @@ export async function ftArchivo(input) {
   }
 }
 
+// Estado editable por ficha: qué se incluye y con qué código. Se conserva
+// entre re-renders para no perder lo que Lety ya escribió.
+function ftEstado() {
+  if (!FT.filas || FT.filas.length !== FT.fichas.length) {
+    FT.filas = FT.fichas.map(f => ({ incluir: true, codigo: f.codigo_sugerido || '' }));
+  }
+  // Los datos de la tarea también se recuerdan: el panel se re-dibuja entero
+  // en cada cambio, y sin esto se perderían OT, PO, notas y sobre todo el
+  // muestrista asignado, que es INMUTABLE una vez creada la tarea.
+  if (!FT.meta) FT.meta = { asig: 'israel', ot: '', po: '', notas: '' };
+  return FT.filas;
+}
+
 function renderFichas() {
   const ui = document.getElementById('ft-ui');
   const { fichas, errores } = FT;
+  const enBlanco = errores.filter(e => e.motivo === 'hoja en blanco');
+  const ilegibles = errores.filter(e => e.motivo !== 'hoja en blanco');
   if (fichas.length === 0) {
-    ui.innerHTML = `<div class="al alr"><span>⚠️</span><span style="font-size:12px">No se encontró ninguna ficha con código. Revisa que el archivo sea el de fichas técnicas llenas (la plantilla vacía no sirve).${errores.length ? ' Hojas revisadas: ' + es(errores.map(e => e.hoja).join(', ')) : ''}</span></div>`;
+    ui.innerHTML = `<div class="al alr"><span>⚠️</span><span style="font-size:12px">Este archivo no tiene ninguna hoja con datos${enBlanco.length ? ' (las ' + es(enBlanco.length) + ' hojas están en blanco)' : ''}. Sube el Excel de fichas técnicas, aunque estén a medio llenar.</span></div>`;
     return;
   }
-  const f0 = fichas[0];
-  const mismoModelo = fichas.every(f => f.modelo === f0.modelo && f.cliente === f0.cliente);
-  // Validaciones ANTES de dejar que Lety llene el formulario: si algo bloquea,
-  // no se pinta el botón de crear.
-  const demasiadas = fichas.length > 40;
-  const vistos = new Set();
-  const duplicados = new Set();
-  fichas.forEach(f => {
-    if (vistos.has(f.codigo)) duplicados.add(f.codigo); else vistos.add(f.codigo);
+  const filas = ftEstado();
+  const inc = fichas.map((f, i) => ({ f, i })).filter(({ i }) => filas[i].incluir);
+  const f0 = (inc[0] || { f: fichas[0] }).f;
+  const mismoModelo = inc.every(({ f }) => f.modelo === f0.modelo && f.cliente === f0.cliente);
+  // Códigos: vacíos, inválidos o repetidos entre las fichas INCLUIDAS
+  const vistos = new Map();
+  const dup = new Set(), malos = new Set(), vacios = new Set();
+  inc.forEach(({ i }) => {
+    const c = normalizarCodigo(filas[i].codigo);
+    if (!c) { vacios.add(i); return; }
+    if (!codigoValidoFT(c)) { malos.add(i); return; }
+    if (vistos.has(c)) { dup.add(i); dup.add(vistos.get(c)); } else vistos.set(c, i);
   });
-  const bloqueado = demasiadas || duplicados.size > 0;
+  const demasiadas = inc.length > 40;
+  const bloqueado = demasiadas || inc.length === 0 || vacios.size > 0 || malos.size > 0 || dup.size > 0;
+  const chip = (txt, tipo) => `<span class="bge ${tipo}" style="margin-right:4px">${es(txt)}</span>`;
   ui.innerHTML = `
     <div class="card bl">
-      <div class="dt">${es(f0.modelo)} · ${es(f0.cliente)}</div>
-      <div class="ds">${es(f0.marca)} · ${es(f0.tipo_producto)} · Talla ${es(f0.talla)}</div>
-      <div class="mr"><span>Máquina ${es(f0.maquina_marca)} #${es(f0.maquina_numero)}</span><span>${es(f0.agujas)} agujas · Ø ${es(f0.diametro)}</span></div>
+      <div class="dt">${es(f0.modelo || '(sin modelo)')}${f0.cliente ? ' · ' + es(f0.cliente) : ''}</div>
+      <div class="ds">${[f0.marca, f0.tipo_producto, f0.talla && 'Talla ' + f0.talla].filter(Boolean).map(es).join(' · ') || 'Sin datos de pedido — se completan después'}</div>
+      ${f0.maquina_marca || f0.agujas ? `<div class="mr"><span>Máquina ${es(f0.maquina_marca)} ${f0.maquina_numero ? '#' + es(f0.maquina_numero) : ''}</span><span>${es(f0.agujas)} agujas</span></div>` : ''}
     </div>
-    ${!mismoModelo ? '<div class="al alw"><span>⚠️</span><span style="font-size:12px">Las hojas tienen modelo o cliente distintos. Se creará UNA tarea con el modelo de la primera hoja; si son desarrollos diferentes, súbelos por separado.</span></div>' : ''}
-    ${errores.length ? `<div class="al alw"><span>ℹ️</span><span style="font-size:12px">Hojas omitidas por no tener código: ${es(errores.map(e => e.hoja).join(', '))}</span></div>` : ''}
-    ${demasiadas ? `<div class="al alr"><span>⚠️</span><span style="font-size:12px">El archivo trae ${fichas.length} variantes y el máximo por tarea es 40. Divide el pack en dos archivos.</span></div>` : ''}
-    ${duplicados.size ? `<div class="al alr"><span>⚠️</span><span style="font-size:12px">Códigos repetidos entre hojas: ${es([...duplicados].join(', '))}. Corrige el archivo antes de continuar.</span></div>` : ''}
-    <div class="stitle">${fichas.length} variante${fichas.length === 1 ? '' : 's'} detectada${fichas.length === 1 ? '' : 's'}</div>
-    ${fichas.map((f, i) => `<div class="vi">
-      <div style="flex:1">
-        <div class="vcod">${es(f.codigo)}</div>
-        <div style="font-size:12px;color:var(--tx2)">${es(f.color_base || '—')} · medidas ${es(['A','B','C','D','E'].filter(k => f.med_sh[k]).length)}/5 · giros ${es(Object.values(f.giros).filter(Boolean).length)}/4</div>
-      </div>
-      <div style="width:110px;flex-shrink:0">
-        <input class="fi" type="number" min="0" placeholder="pares" data-ftpares="${i}" style="padding:8px 10px;font-size:14px">
-      </div>
-      <select class="fi" data-ftcx="${i}" style="width:70px;flex-shrink:0;padding:8px 6px;font-size:14px">
-        <option value="A">A</option><option value="B">B</option><option value="C">C</option>
-      </select>
-    </div>`).join('')}
-    ${bloqueado ? '' : `
+    <div class="al ali"><span>📄</span><span style="font-size:12px">${es(fichas.length)} hoja${fichas.length === 1 ? '' : 's'} con datos${enBlanco.length ? ' · ' + es(enBlanco.length) + ' en blanco (omitidas)' : ''}${ilegibles.length ? ' · no se pudo leer: ' + es(ilegibles.map(e => e.hoja).join(', ')) : ''}. Desmarca las que no vayan en esta tarea y ajusta los códigos si hace falta.</span></div>
+    ${!mismoModelo ? '<div class="al alw"><span>⚠️</span><span style="font-size:12px">Las hojas incluidas tienen modelo o cliente distintos. Se crea UNA tarea con los datos de la primera; si son desarrollos diferentes, súbelos por separado.</span></div>' : ''}
+    ${demasiadas ? `<div class="al alr"><span>⚠️</span><span style="font-size:12px">Tienes ${es(inc.length)} fichas marcadas y el máximo por tarea es 40. Desmarca algunas.</span></div>` : ''}
+    ${vacios.size ? '<div class="al alr"><span>⚠️</span><span style="font-size:12px">Hay fichas marcadas sin código. Escríbelo o desmárcalas: el código identifica la ficha en el historial.</span></div>' : ''}
+    ${malos.size ? '<div class="al alr"><span>⚠️</span><span style="font-size:12px">Hay códigos con espacios o símbolos no permitidos. Usa solo letras, números, punto, guion y guion bajo.</span></div>' : ''}
+    ${dup.size ? '<div class="al alr"><span>⚠️</span><span style="font-size:12px">Hay códigos repetidos entre las fichas marcadas. Cada ficha necesita el suyo.</span></div>' : ''}
+    <div class="stitle">Fichas del archivo</div>
+    ${fichas.map((f, i) => {
+      const st = filas[i];
+      const cod = normalizarCodigo(st.codigo);
+      const mal = st.incluir && (vacios.has(i) || malos.has(i) || dup.has(i));
+      return `<div class="vi" style="flex-wrap:wrap;${st.incluir ? '' : 'opacity:.5'}${mal ? ';border-color:var(--rd)' : ''}">
+        <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:150px;cursor:pointer">
+          <input type="checkbox" data-ftinc="${i}" ${st.incluir ? 'checked' : ''} style="width:20px;height:20px;flex-shrink:0">
+          <span style="font-size:12px;color:var(--tx2)">${es(f.hoja)}${f.color_base ? ' · ' + es(f.color_base) : ''}</span>
+        </label>
+        <input class="fi" data-ftcod="${i}" value="${es(st.codigo)}" placeholder="código" style="width:150px;flex-shrink:0;padding:8px 10px;font-size:14px${mal ? ';border-color:var(--rd)' : ''}">
+        <input class="fi" type="number" min="0" placeholder="pares" data-ftpares="${i}" value="${es(st.pares || '')}" style="width:90px;flex-shrink:0;padding:8px 10px;font-size:14px">
+        <select class="fi" data-ftcx="${i}" style="width:64px;flex-shrink:0;padding:8px 4px;font-size:14px">
+          ${['A', 'B', 'C'].map(x => `<option value="${x}"${st.cx === x ? ' selected' : ''}>${x}</option>`).join('')}
+        </select>
+        <div style="flex-basis:100%;font-size:11px;color:var(--tx3);padding-left:28px">
+          ${!f.codigo_ok && f.codigo ? chip('código del Excel: ' + f.codigo, 'bpend') : ''}
+          ${f.faltantes.length ? chip('falta: ' + f.faltantes.join(', '), 'bpend') : chip('ficha completa', 'bok')}
+        </div>
+      </div>`;
+    }).join('')}
     <div class="fg" style="margin-top:10px"><label class="fl">Asignar a</label>
-      <select class="fi" id="ft-asig"><option value="israel">Israel</option><option value="jesus">Jesús</option></select></div>
+      <select class="fi" id="ft-asig">
+        <option value="israel"${FT.meta.asig === 'israel' ? ' selected' : ''}>Israel</option>
+        <option value="jesus"${FT.meta.asig === 'jesus' ? ' selected' : ''}>Jesús</option>
+      </select></div>
     <div class="g2">
-      <div class="fg"><label class="fl">OT</label><input class="fi" id="ft-ot" placeholder="7735"></div>
-      <div class="fg"><label class="fl">PO</label><input class="fi" id="ft-po" placeholder="2422"></div>
+      <div class="fg"><label class="fl">OT (opcional)</label><input class="fi" id="ft-ot" value="${es(FT.meta.ot)}" placeholder="7735"></div>
+      <div class="fg"><label class="fl">PO (opcional)</label><input class="fi" id="ft-po" value="${es(FT.meta.po)}" placeholder="2422"></div>
     </div>
-    <div class="fg"><label class="fl">Notas para el muestrista</label><textarea class="fi" id="ft-notas" rows="2" placeholder="Instrucciones especiales..."></textarea></div>
+    <div class="fg"><label class="fl">Notas para el muestrista</label><textarea class="fi" id="ft-notas" rows="2" placeholder="Instrucciones especiales...">${es(FT.meta.notas)}</textarea></div>
     <div class="al ali"><span>🔒</span><span style="font-size:12px">A = tin básico · B = con diseño · C = jacquard. La complejidad solo la ves tú.</span></div>
-    <button class="btn btn-am" id="ft-go" onclick="asignarDesdeFicha()">✓ Crear tarea con ${fichas.length} ficha${fichas.length === 1 ? '' : 's'}</button>`}`;
+    <button class="btn btn-am" id="ft-go" ${bloqueado ? 'disabled style="opacity:.5"' : ''} onclick="asignarDesdeFicha()">
+      ${bloqueado ? (inc.length === 0 ? 'Marca al menos una ficha' : 'Corrige los códigos marcados') : '✓ Crear tarea con ' + inc.length + ' ficha' + (inc.length === 1 ? '' : 's')}</button>`;
+}
+
+// La validación de códigos es la MISMA que la del catálogo (importada): si se
+// duplicara aquí, un cambio futuro allá dejaría las dos desincronizadas.
+const codigoValidoFT = codigoValido;
+
+// Cambios en la lista de fichas: se guardan en FT.filas y se re-pinta para
+// refrescar avisos y el estado del botón
+export function wireFichaEvents() {
+  const ui = document.getElementById('ft-ui');
+  if (!ui) return;
+  const guarda = t => {
+    const filas = ftEstado();
+    // Datos de la tarea: se recuerdan pero NO disparan re-render (no cambian
+    // ningún aviso y re-dibujar mientras se escribe quitaría el foco)
+    if (t.id === 'ft-asig') { FT.meta.asig = t.value; return false; }
+    if (t.id === 'ft-ot') { FT.meta.ot = t.value; return false; }
+    if (t.id === 'ft-po') { FT.meta.po = t.value; return false; }
+    if (t.id === 'ft-notas') { FT.meta.notas = t.value; return false; }
+    if (t.dataset.ftinc !== undefined) filas[t.dataset.ftinc].incluir = t.checked;
+    else if (t.dataset.ftcod !== undefined) filas[t.dataset.ftcod].codigo = t.value;
+    else if (t.dataset.ftpares !== undefined) filas[t.dataset.ftpares].pares = t.value;
+    else if (t.dataset.ftcx !== undefined) filas[t.dataset.ftcx].cx = t.value;
+    else return false;
+    return true;
+  };
+  // 'change' re-pinta (avisos al día); 'input' solo guarda, para no perder el
+  // foco mientras Lety escribe el código
+  ui.addEventListener('input', e => { guarda(e.target); });
+  ui.addEventListener('change', e => { if (guarda(e.target)) renderFichas(); });
 }
 
 let asignandoFT = false;
@@ -223,51 +286,67 @@ export async function asignarDesdeFicha() {
   const btn = document.getElementById('ft-go');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Creando tarea…'; }
   try {
-    const f0 = FT.fichas[0];
-    const pares = i => (document.querySelector(`[data-ftpares="${i}"]`) || {}).value || '';
-    const cx = i => (document.querySelector(`[data-ftcx="${i}"]`) || {}).value || 'A';
-    const variantes = FT.fichas.map((f, i) => ({
-      codigo: f.codigo,
+    // Solo las fichas marcadas, con el código que Lety dejó en pantalla
+    const filas = ftEstado();
+    const sel = FT.fichas
+      .map((f, i) => ({ f, st: filas[i] }))
+      .filter(({ st }) => st.incluir)
+      .map(({ f, st }) => ({ f, cod: normalizarCodigo(st.codigo), st }));
+    if (sel.length === 0) { toast('Marca al menos una ficha', false); return; }
+    const codigos = sel.map(s => s.cod);
+    if (codigos.some(c => !c || !codigoValidoFT(c)) || new Set(codigos).size !== codigos.length) {
+      toast('Revisa los códigos: no pueden estar vacíos, repetidos ni traer espacios', false);
+      return;
+    }
+    if (sel.length > 40) { toast('Máximo 40 fichas por tarea — desmarca algunas', false); return; }
+    const f0 = sel[0].f;
+    const variantes = sel.map(({ f, cod, st }) => ({
+      codigo: cod,
       descripcion: f.color_base || f.modelo || '',
-      pares_requeridos: String(pares(i)).trim(),
+      pares_requeridos: String(st.pares || '').trim(),
       tipo_pack: '',
     }));
     const complejidadPorCodigo = {};
-    FT.fichas.forEach((f, i) => { complejidadPorCodigo[f.codigo] = cx(i); });
+    sel.forEach(({ cod, st }) => { complejidadPorCodigo[cod] = st.cx || 'A'; });
 
     const devRef = db.collection('desarrollos').doc();
     const privRef = db.collection('desarrollos_privado').doc(devRef.id);
     const batch = db.batch();
     batch.set(devRef, {
-      ot: gv('ft-ot'), po: gv('ft-po'), codigo_quini: f0.codigo,
-      modelo: f0.modelo || '(sin modelo)', cliente: f0.cliente || '',
+      ot: gv('ft-ot'), po: gv('ft-po'), codigo_quini: f0.codigo || '',
+      // El modelo es obligatorio para las reglas; una propuesta sin modelo
+      // se identifica por su primer código, que sí existe siempre
+      modelo: f0.modelo || codigos[0], cliente: f0.cliente || '',
       genero: '', talla: f0.talla || '', tipo_producto: f0.tipo_producto || '',
       asignado_a: gv('ft-asig') || 'israel',
-      notas: gv('ft-notas'), variantes, variante_codigos: variantes.map(v => v.codigo),
+      notas: gv('ft-notas'), variantes, variante_codigos: codigos,
       estado: 'pendiente',
       origen: 'ficha_tecnica',
       fecha_creacion: firebase.firestore.FieldValue.serverTimestamp(),
       creado_por: APP.user.id,
     });
     batch.set(privRef, {
-      tipo_complejidad: cx(0),
+      tipo_complejidad: sel[0].st.cx || 'A',
       complejidad_por_codigo: complejidadPorCodigo,
     });
     // Una ficha técnica por variante, en la subcolección PRIVADA del
     // desarrollo: son los valores objetivo y solo Lety puede leerlos, para
     // que la captura del muestrista sea ciega de verdad (ver firestore.rules)
-    FT.fichas.forEach(f => {
-      const { hoja, codigo_raw, ...datos } = f;
-      batch.set(privRef.collection('fichas_tecnicas').doc(f.codigo), {
-        ...datos, id_desarrollo: devRef.id, hoja_origen: String(hoja || '').slice(0, 60),
+    sel.forEach(({ f, cod }) => {
+      const { hoja, codigo_raw, codigo_ok, codigo_sugerido, faltantes, ...datos } = f;
+      batch.set(privRef.collection('fichas_tecnicas').doc(cod), {
+        ...datos, codigo: cod, id_desarrollo: devRef.id,
+        hoja_origen: String(hoja || '').slice(0, 60),
+        // Qué venía incompleto en el Excel, para que Lety lo sepa al revisar
+        faltantes_al_importar: (faltantes || []).slice(0, 12),
         archivo: String(FT.archivo || '').slice(0, 120),
         creado_por: APP.user.id,
         fecha_creacion: firebase.firestore.FieldValue.serverTimestamp(),
       });
     });
     await batch.commit();
-    const n = FT.fichas.length;
-    FT = { fichas: [], errores: [], archivo: '' };
+    const n = sel.length;
+    FT = { fichas: [], errores: [], archivo: '', filas: null, meta: null };
     const file = document.getElementById('ft-file');
     if (file) file.value = '';
     document.getElementById('ft-ui').innerHTML = '';
@@ -567,6 +646,7 @@ async function renderComparacion(d, capId) {
       <div class="card ${fuera.length ? 'rd' : 'gn'}">
         <div class="dt">${fuera.length ? '⚠️ ' + fuera.length + ' medida' + (fuera.length === 1 ? '' : 's') + ' fuera de tolerancia' : '✅ Dentro de tolerancia'}</div>
         <div class="ds">Comparado contra la ficha técnica ${es(ft.hoja_origen || ft.codigo)}${conTol.length ? ' · ' + es(conTol.length) + ' medidas con tolerancia' : ''}</div>
+        ${(ft.faltantes_al_importar || []).length ? `<div class="mr"><span style="font-size:11px;color:var(--tx3)">La ficha técnica llegó sin: ${es(ft.faltantes_al_importar.join(', '))}</span></div>` : ''}
       </div>
       ${conTol.length ? `<div class="fsec"><div class="ftitle">Medidas · objetivo → real</div>${conTol.map(fila).join('')}</div>` : ''}
       ${info.length ? `<div class="fsec"><div class="ftitle">Otros parámetros (sin tolerancia en la ficha)</div>${info.map(fila).join('')}</div>` : ''}`;

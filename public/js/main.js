@@ -6,7 +6,7 @@ import { selectUser, numPad, backPin, clearPin, logout, openChangePinSelf, saveP
 import { mTab, loadMHist, openTMFor, endTMA, wireMuestristaEvents } from './muestrista.js';
 import { togCapTimer, backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
 import { clearSig, saveSig, backFirma } from './firma.js';
-import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents, wireAutollenado, ftArchivo, asignarDesdeFicha } from './admin.js';
+import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents, wireAutollenado, ftArchivo, asignarDesdeFicha, wireFichaEvents } from './admin.js';
 import { loadDB } from './dashboard.js';
 import { exportCSV, exportExcel } from './export.js';
 import { openCatalogo, catArchivo, wireCatalogoEvents } from './catalogo.js';
@@ -33,6 +33,7 @@ window.addEventListener('DOMContentLoaded', () => {
   wireCapturaEvents();
   wireCatalogoEvents();
   wireAutollenado();
+  wireFichaEvents();
   // Cerrar modales al tocar el fondo (excepto el de confirmación)
   ['otm', 'otma', 'ocp'].forEach(id => {
     const ovl = document.getElementById(id);

@@ -114,16 +114,26 @@ function filasBajo(m, ancla, etiquetas, maxFilas = 14) {
   return out;
 }
 
-function valoresDe(ref, cols) {
+// Valores a la derecha de una etiqueta. `maxCols` acota CUÁNTAS COLUMNAS se
+// recorren, no cuántos valores se encuentran: sin ese tope, una celda vacía
+// hace que la lectura siga hasta la sección de al lado. Pasó de verdad — en
+// una ficha de propuesta, con la columna de giros en blanco, se tomaban los
+// números de alimentador de la tabla "PUNTO DE MÁQUINA" como si fueran giros.
+function valoresDe(ref, cols, maxCols) {
   if (!ref) return [];
   const fila = ref.fila;
   const vals = [];
-  for (let c = ref.c + 1; c < fila.length && vals.length < cols; c++) {
+  const fin = maxCols ? Math.min(fila.length, ref.c + 1 + maxCols) : fila.length;
+  for (let c = ref.c + 1; c < fin && vals.length < cols; c++) {
     const v = txt(fila[c]);
     if (v) vals.push(v);
   }
   return vals;
 }
+
+// De la etiqueta de giros/velocidades (col F) al valor (col I) hay 3 columnas;
+// la 4ª ya es la tabla de punto de máquina.
+const ANCHO_CADENA = 3;
 
 const MEDIDAS = [
   { key: 'A', alias: ['A', 'ALTO TUBO'] },
@@ -211,11 +221,11 @@ export function parseHoja(matriz) {
       ft.med_h[key] = tomar(corte + 1, -1);
     } else {
       // Plantilla sin la etiqueta repetida: se cae al orden de aparición
-      const valores = valoresDe(ref, 6).filter(esNum);
+      const valores = valoresDe(ref, 6, 8).filter(esNum);
       ft.med_sh[key] = valores[0] !== undefined ? String(num(valores[0])) : '';
       ft.med_h[key] = valores[1] !== undefined ? String(num(valores[1])) : '';
     }
-    const tol = valoresDe(ref, 8).find(v => /[+±]/.test(v));
+    const tol = valoresDe(ref, 8, 9).find(v => /[+±]/.test(v));
     ft.med_tol[key] = tol ? tolerancia(tol) : null;
   });
 
@@ -226,7 +236,7 @@ export function parseHoja(matriz) {
   ], 8);
   ft.giros = {};
   ['el', 'tb', 'pl', 'rb'].forEach(k => {
-    const v = valoresDe(gRefs[k], 3).find(x => num(x) !== null);
+    const v = valoresDe(gRefs[k], 3, ANCHO_CADENA).find(x => num(x) !== null);
     ft.giros[k] = v ? String(num(v)) : '';
   });
 
@@ -236,7 +246,7 @@ export function parseHoja(matriz) {
   ], 8);
   ft.vels = {};
   ['el', 'tb', 'tp', 'pl'].forEach(k => {
-    const v = valoresDe(vRefs[k], 3).find(x => num(x) !== null);
+    const v = valoresDe(vRefs[k], 3, ANCHO_CADENA).find(x => num(x) !== null);
     ft.vels[k] = v ? String(num(v)) : '';
   });
 
@@ -301,21 +311,88 @@ export function parseHoja(matriz) {
   return ft;
 }
 
-// Lee el libro completo: una ficha por hoja con código válido
+// Campos que conviene que traiga la ficha, para avisar de los que falten.
+// Ninguno es obligatorio: una propuesta puede llegar sin nada más que el
+// color, y aun así vale como tarea — el muestrista la va a llenar.
+const ESPERADOS = [
+  { key: 'modelo', label: 'modelo' },
+  { key: 'cliente', label: 'cliente' },
+  { key: 'maquina_marca', label: 'máquina' },
+  { key: 'talla', label: 'talla' },
+  { key: 'color_base', label: 'color' },
+];
+
+// Qué le falta a una ficha (para mostrarlo como aviso, nunca como bloqueo)
+export function faltantesDe(ft) {
+  const falta = ESPERADOS.filter(c => !String(ft[c.key] || '').trim()).map(c => c.label);
+  const medidas = ['A', 'B', 'C', 'D', 'E'].filter(k => (ft.med_sh || {})[k] || (ft.med_h || {})[k]).length;
+  if (medidas === 0) falta.push('medidas');
+  if (!Object.values(ft.giros || {}).some(Boolean)) falta.push('giros');
+  if (!Object.values(ft.vels || {}).some(Boolean)) falta.push('velocidades');
+  return falta;
+}
+
+// Convierte un texto libre en algo usable como código: espacios y símbolos
+// pasan a guion. Se usa para SUGERIR, nunca para aceptar en silencio.
+function aCodigo(texto) {
+  const s = normalizarCodigo(texto).replace(/[^A-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return codigoValido(s) ? s.slice(0, 50) : '';
+}
+
+// Código sugerido cuando la hoja no trae uno usable. Se aprovecha, en orden:
+// lo que haya en el campo de código (aunque venga como "PROPUESTA 4"), y si
+// no, modelo + color. Así Lety confirma en vez de inventar desde cero.
+export function sugerirCodigo(ft, indice) {
+  return aCodigo(ft.codigo_raw || ft.codigo)
+    || aCodigo([ft.modelo, ft.color_base].filter(Boolean).join(' '))
+    || 'FICHA-' + String(indice + 1).padStart(2, '0');
+}
+
+// Lee el libro completo: UNA FICHA POR HOJA, sin exigir que esté completa.
+// Solo se descartan las hojas totalmente en blanco (copias de la plantilla que
+// nadie llenó): ahí no hay nada que capturar. Todo lo demás entra con su lista
+// de faltantes para que Lety decida.
 export function parseLibro(wb, XLSX) {
   const fichas = [], errores = [];
-  (wb.SheetNames || []).forEach(nombre => {
+  (wb.SheetNames || []).forEach((nombre, i) => {
     try {
       const m = XLSX.utils.sheet_to_json(wb.Sheets[nombre], { header: 1, raw: false, defval: '', blankrows: true });
       const ft = parseHoja(m);
-      if (!ft.codigo) { errores.push({ hoja: nombre, motivo: 'sin código' }); return; }
-      if (!codigoValido(ft.codigo)) { errores.push({ hoja: nombre, motivo: 'código no válido (espacios, / u otros símbolos)' }); return; }
       ft.hoja = nombre;
+      // "Vacía" = la plantilla sin tocar. Se revisa TODO lo que puede traer
+      // una ficha, no solo la cabecera: una hoja capturada por partes puede
+      // llegar solo con medidas o velocidades, y descartarla sería perder
+      // trabajo real.
+      // Los materiales y alimentadores NO cuentan como señal: la plantilla
+      // corporativa ya viene con hilos de ejemplo, así que una copia sin tocar
+      // los trae igual y parecería una ficha llena.
+      const tieneAlgo = ft.codigo || ft.modelo || ft.color_base || ft.cliente ||
+        ft.talla || ft.maquina_marca || ft.maquina_numero || ft.peso_sal || ft.peso_cer ||
+        Object.values(ft.med_sh || {}).some(Boolean) || Object.values(ft.med_h || {}).some(Boolean) ||
+        Object.values(ft.giros || {}).some(Boolean) || Object.values(ft.vels || {}).some(Boolean);
+      if (!tieneAlgo) { errores.push({ hoja: nombre, motivo: 'hoja en blanco' }); return; }
+      // El código del Excel se respeta solo si sirve como identificador; si
+      // trae espacios o símbolos (p. ej. "PROPUESTA 4") se propone convertido
+      // y Lety lo confirma o lo cambia en pantalla.
+      ft.codigo_ok = !!ft.codigo && codigoValido(ft.codigo);
+      ft.codigo_sugerido = ft.codigo_ok ? ft.codigo : sugerirCodigo(ft, i);
+      ft.faltantes = faltantesDe(ft);
       fichas.push(ft);
     } catch (e) {
       console.error('ficha-tecnica hoja ' + nombre + ':', e);
       errores.push({ hoja: nombre, motivo: 'no se pudo leer' });
     }
+  });
+  // Varias hojas del mismo modelo y color producen la misma sugerencia (pasa
+  // con los archivos de propuestas). Se numeran para que la pantalla no abra
+  // con todo en rojo; Lety los ajusta si quiere otros.
+  const usados = new Map();
+  fichas.forEach(f => {
+    const base = f.codigo_sugerido;
+    if (!usados.has(base)) { usados.set(base, 1); return; }
+    const n = usados.get(base) + 1;
+    usados.set(base, n);
+    f.codigo_sugerido = (base + '-' + n).slice(0, 60);
   });
   return { fichas, errores };
 }
