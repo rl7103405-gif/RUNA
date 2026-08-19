@@ -518,10 +518,11 @@ export async function loadRev() {
       ? '<div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div>'
       : snap2.docs.map(d => {
           const dt = d.data();
-          return `<div class="card">
+          return `<div class="card" data-proc="${es(d.id)}" style="cursor:pointer">
             <div class="dt">${es(dt.modelo)} · <span class="vcod">${es(dt.codigo_variante)}</span>
               ${dt.estado === 'correccion' ? '<span class="bge brd" style="margin-left:6px">🔁 en corrección</span>' : ''}</div>
             <div class="ds">${(USERS[dt.id_muestrista] || {}).nombre || es(dt.id_muestrista)} · ${fmtDate(dt.dt_inicio)}</div>
+            <div class="mr"><span style="font-size:11px;color:var(--tx3)">${dt.folio ? es(dt.folio) + ' · ' : ''}Toca para ver la ficha</span><span style="color:var(--pri)">›</span></div>
           </div>`;
         }).join('');
   } catch (e) {
@@ -540,15 +541,19 @@ function renderRevCard(id, d) {
 }
 
 // readOnly=true: ver ficha ya aprobada (con opción de reabrir)
-export async function openRev(capturaId, readOnly = false) {
+export async function openRev(capturaId, readOnly = false, soloVer = false) {
   if (!fsOk()) return;
   APP.revCap = capturaId;
+  // Se limpia aquí: renderComparacion solo la asigna cuando ESTA captura tiene
+  // ficha técnica, así que sin el reset quedaría la de la ficha anterior.
+  APP.revFicha = null;
   try {
     const snap = await db.collection('capturas').doc(capturaId).get();
     const d = snap.data();
     if (!d) { toast('Ficha no encontrada', false); return; }
     APP.revFolio = d.folio || null; // para la pantalla de éxito al aprobar
-    document.getElementById('rtitle').textContent = readOnly ? 'Ficha aprobada' : 'Revisar ficha práctica';
+    document.getElementById('rtitle').textContent = soloVer ? 'Ficha en proceso'
+      : readOnly ? 'Ficha aprobada' : 'Revisar ficha práctica';
     // TEN calculado desde Firestore, no desde timers en memoria
     const tn = tenFromDoc(d);
     const sh = d.med_sh || {}, mh = d.med_h || {}, gi = d.giros || {}, vl = d.vels || {}, pt = d.pto || {};
@@ -609,7 +614,9 @@ export async function openRev(capturaId, readOnly = false) {
       ${d.obs ? `<div class="fsec"><div class="ftitle">Observaciones</div><div style="font-size:13px">${es(d.obs)}</div></div>` : ''}
       ${esFirmaValida(d.firma_m) ? `<div class="fsec"><div class="ftitle">Firma muestrista</div><img src="${es(d.firma_m)}" alt="Firma muestrista" class="firma-img"></div>` : ''}
       ${readOnly && esFirmaValida(d.firma_l) ? `<div class="fsec"><div class="ftitle">Firma de aprobación (Lety)</div><img src="${es(d.firma_l)}" alt="Firma Lety" class="firma-img"></div>` : ''}
-      ${readOnly
+      ${soloVer
+        ? `<div class="al ali"><span>⏱</span><span style="font-size:12px">El muestrista sigue capturando esta ficha. Aquí ves lo que lleva y la ficha técnica de referencia; podrás aprobarla cuando la firme.</span></div>`
+        : readOnly
         ? `<button class="btn btn-bl" onclick="reabrirFicha()">🔓 Reabrir ficha (volver a pendiente)</button>`
         : `<div class="brow">
             <button class="btn btn-gn" style="flex:1" onclick="aprobar()">✓ Aprobar y firmar</button>
@@ -633,6 +640,7 @@ async function renderComparacion(d, capId) {
     if (!snap.exists) return; // desarrollo capturado a mano, sin ficha técnica
     if (APP.revCap !== capId) return; // Lety ya abrió otra ficha mientras cargaba
     const ft = snap.data();
+    APP.revFicha = ft; // para el desplegable de la ficha completa
     const filas = comparar(ft, d);
     const fuera = filas.filter(f => f.fuera === true);
     const conTol = filas.filter(f => f.fuera !== null);
@@ -651,7 +659,9 @@ async function renderComparacion(d, capId) {
         ${(ft.faltantes_al_importar || []).length ? `<div class="mr"><span style="font-size:11px;color:var(--tx3)">La ficha técnica llegó sin: ${es(ft.faltantes_al_importar.join(', '))}</span></div>` : ''}
       </div>
       ${conTol.length ? `<div class="fsec"><div class="ftitle">Medidas · objetivo → real</div>${conTol.map(fila).join('')}</div>` : ''}
-      ${info.length ? `<div class="fsec"><div class="ftitle">Otros parámetros (sin tolerancia en la ficha)</div>${info.map(fila).join('')}</div>` : ''}`;
+      ${info.length ? `<div class="fsec"><div class="ftitle">Otros parámetros (sin tolerancia en la ficha)</div>${info.map(fila).join('')}</div>` : ''}
+      <button class="btn btn-gh btn-sm" style="width:100%" data-revft="1">📄 Ver la ficha técnica completa</button>
+      <div id="rev-ftdet"></div>`;
   } catch (e) {
     console.error('comparacion ficha tecnica:', e);
     cont.innerHTML = '<div class="al alw"><span>⚠️</span><span style="font-size:12px">No se pudo cargar la ficha técnica para comparar</span></div>';
@@ -882,12 +892,20 @@ export async function openTarea(devId) {
   }
 }
 
-// Muestra u oculta los valores objetivo de una variante
+// Muestra u oculta los valores objetivo de una variante (pestaña Tareas)
 function verFichaTecnica(cod) {
-  const cont = document.getElementById('ftdet-' + cod);
+  pintaFicha(document.getElementById('ftdet-' + cod), (APP.tareaFichas || {})[cod], cod);
+}
+
+// Lo mismo desde la pantalla de revisión: Lety necesita la ficha técnica
+// tanto al revisar una ficha firmada como al mirar una que sigue en curso.
+function verFichaRev() {
+  pintaFicha(document.getElementById('rev-ftdet'), APP.revFicha, (APP.revFicha || {}).codigo || '');
+}
+
+function pintaFicha(cont, ft, cod) {
   if (!cont) return;
   if (cont.innerHTML) { cont.innerHTML = ''; return; }
-  const ft = (APP.tareaFichas || {})[cod];
   if (!ft) { cont.innerHTML = '<div style="font-size:12px;color:var(--tx3)">Sin ficha técnica</div>'; return; }
   const fila = (et, v) => v ? '<div class="mr"><span>' + es(et) + '</span><span style="font-family:var(--mono);font-size:12px">' + es(v) + '</span></div>' : '';
   const med = ['A', 'B', 'C', 'D', 'E'].map(k => {
@@ -899,7 +917,7 @@ function verFichaTecnica(cod) {
   const ciclo = [ft.t_ciclo_min, ft.t_ciclo_seg].filter(Boolean).length
     ? es(ft.t_ciclo_min || '0') + 'm ' + es(ft.t_ciclo_seg || '0') + 's' : '';
   cont.innerHTML = '<div class="card" style="margin:8px 0 0;background:var(--s2)">'
-    + '<div class="ftitle">Ficha técnica · ' + es(ft.hoja_origen || cod) + '</div>'
+    + '<div class="ftitle">Ficha técnica' + (ft.hoja_origen || cod ? ' · ' + es(ft.hoja_origen || cod) : '') + '</div>'
     + fila('Máquina', [ft.maquina_marca, ft.maquina_numero].filter(Boolean).join(' #'))
     + fila('Agujas', ft.agujas)
     + fila('Peso salida / cerrado', [ft.peso_sal, ft.peso_cer].filter(Boolean).join(' / '))
@@ -1056,6 +1074,16 @@ export function wireAdminEvents() {
   document.getElementById('pend-list').addEventListener('click', e => {
     const btn = e.target.closest('[data-rev]');
     if (btn) openRev(btn.dataset.rev, false);
+  });
+  // "En proceso": la ficha aún no está firmada, así que se abre en consulta
+  const procList = document.getElementById('proc-list');
+  if (procList) procList.addEventListener('click', e => {
+    const card = e.target.closest('[data-proc]');
+    if (card) openRev(card.dataset.proc, false, true);
+  });
+  const rBody = document.getElementById('rbody');
+  if (rBody) rBody.addEventListener('click', e => {
+    if (e.target.closest('[data-revft]')) verFichaRev();
   });
   const tkList = document.getElementById('tk-list');
   if (tkList) tkList.addEventListener('click', e => {
