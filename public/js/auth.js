@@ -138,6 +138,12 @@ export function logout() {
   clearAllTimers();
   APP.listeners.forEach(u => { try { u(); } catch (e) {} });
   APP.listeners = [];
+  // Los de pausas viven aparte: uno por ficha abierta, se recrean al entrar
+  (APP.unsubPausas || []).forEach(u => { try { u(); } catch (e) {} });
+  APP.unsubPausas = [];
+  APP.pausas = {};
+  APP.pausasVistas = {};
+  APP.pausasPend = [];
   APP.user = null;
   APP.vars = [];
   APP.activasSnap = [];

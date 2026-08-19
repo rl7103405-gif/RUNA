@@ -106,6 +106,27 @@ export function startTM(id, causeId) {
   persist();
 }
 
+// Arranca el TM como si hubiera empezado en `desdeMs` (hora del servidor en
+// que Lety aprobó la pausa). Sin esto, una tablet que estaba cerrada cuando se
+// aprobó empezaría a contar desde que se abre y perdería todo el intervalo.
+export function startTMDesde(id, causeId, desdeMs) {
+  const t = getT(id);
+  if (t.tmActive) return;
+  if (!t.running) startT(id);
+  t.tmActive = true;
+  t.cause = causeId;
+  t.tmStartedAt = Date.now();
+  t.tmCauseStart = tmOf(id);
+  // El tiempo transcurrido desde la aprobación ya es tiempo muerto: se abona
+  // de golpe, acotado al tiempo que la ficha lleva corriendo.
+  const atrasoSeg = Math.max(0, Math.floor((Date.now() - desdeMs) / 1000));
+  if (atrasoSeg > 0) {
+    const margen = Math.max(0, elapsedOf(id) - tmOf(id));
+    t.tmAccum += Math.min(atrasoSeg, margen);
+  }
+  persist();
+}
+
 export function endTM(id) {
   const t = timers[id];
   if (!t || !t.tmActive) return;

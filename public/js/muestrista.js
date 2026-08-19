@@ -2,8 +2,8 @@
 import { db, fsOk } from './fb.js';
 import { APP, USERS, TM_CAUSES, OPEN_STATES } from './state.js';
 import { es, fmt, fmtMin, fmtDate, getRange, toast, openOvl, closeOvl, tenFromDoc } from './utils.js';
-import { timers, getT, elapsedOf, tmOf, tenOf, startT, pauseT, startTM, endTM, syncToFS, restoreTimers, seedFromDoc, dropTimer } from './timers.js';
-import { startCap, openCap, reopenCorreccion } from './captura.js';
+import { timers, getT, elapsedOf, tmOf, tenOf, startT, pauseT, startTM, startTMDesde, endTM, syncToFS, restoreTimers, seedFromDoc, dropTimer } from './timers.js';
+import { startCap, openCap, reopenCorreccion, refrescaBotonera } from './captura.js';
 
 export function mTab(i, btn) {
   [0, 1, 2].forEach(j => document.getElementById('mt' + j).classList.remove('on'));
@@ -50,6 +50,7 @@ export function initMuestrista() {
         if (c && !OPEN_STATES.includes(c.data.estado)) dropTimer(id);
       });
       APP.activasSnap = open;
+      watchPausas(open.map(c => c.id));
       renderActivas();
       renderTareas();
     }, e => {
@@ -165,8 +166,12 @@ export function renderActivas() {
       ${t.tmActive ? `<div class="al alw" style="margin-top:8px;margin-bottom:0"><span>⏸</span><span style="font-size:12px">${tmMsg}</span></div>` : ''}
       <div class="brow" style="margin-top:10px">
         <button class="btn btn-am btn-sm" style="flex:2" data-act="open" data-id="${es(id)}">📝 Abrir ficha</button>
-        <button class="btn btn-rd btn-sm" style="flex:1" data-act="tm" data-id="${es(id)}">⏸ TM</button>
-        <button class="btn btn-gh btn-sm" style="flex:1" data-act="tog" data-id="${es(id)}">${t.running ? '⏸' : '▶'}</button>
+        ${(() => {
+          const pa = (APP.pausas || {})[id];
+          if (pa && pa.estado === 'pendiente') return '<span class="bge bpend" style="flex:1;justify-content:center">⏳ pausa pedida</span>';
+          if (t.tmActive) return `<button class="btn btn-gn btn-sm" style="flex:1" data-act="finpausa" data-id="${es(id)}">▶ Volver</button>`;
+          return `<button class="btn btn-rd btn-sm" style="flex:1" data-act="tm" data-id="${es(id)}">✋ Pedir pausa</button>`;
+        })()}
       </div>
     </div>`;
   }).join('');
@@ -187,12 +192,7 @@ export function wireMuestristaEvents() {
       case 'open': openCap(id); break;
       case 'fix': reopenCorreccion(id); break;
       case 'tm': openTMFor(id); break;
-      case 'tog': {
-        const t = timers[id];
-        if (t && t.running) pauseT(id, true); else startT(id);
-        renderActivas();
-        break;
-      }
+      case 'finpausa': terminarPausa(id); break;
     }
   });
   document.getElementById('tm-btns').addEventListener('click', e => {
@@ -216,13 +216,17 @@ setInterval(() => {
 export function openTMFor(capturaId) {
   APP.tmTarget = capturaId;
   const t = timers[capturaId];
-  // Ya hay un TM en curso: mostrar directo el modal de fin con la causa REAL
-  // (antes se podía "elegir" otra causa que no quedaba registrada)
+  // Pausa ya autorizada y corriendo: el modal es para terminarla
   if (t && t.tmActive) {
     const c = TM_CAUSES.find(x => x.id === t.cause);
     document.getElementById('tma-cause').textContent = c ? c.label : '—';
     APP.tmaCapId = capturaId;
     openOvl('otma');
+    return;
+  }
+  const pend = (APP.pausas || {})[capturaId];
+  if (pend && pend.estado === 'pendiente') {
+    toast('Ya pediste una pausa: espera a que Lety la autorice', false);
     return;
   }
   document.getElementById('tm-btns').innerHTML = TM_CAUSES.map(c => `
@@ -233,22 +237,115 @@ export function openTMFor(capturaId) {
   openOvl('otm');
 }
 
-function startTMCause(capturaId, causeId) {
-  if (!capturaId) return;
-  startTM(capturaId, causeId);
+// Ya no se toma la pausa: se PIDE. El cronómetro sigue corriendo hasta que
+// Lety la autoriza (decisión del dueño), así que aquí no se toca el timer.
+let pidiendoPausa = false;
+
+async function startTMCause(capturaId, causeId) {
+  if (!capturaId || !fsOk() || pidiendoPausa) return;
+  pidiendoPausa = true;
   closeOvl('otm');
-  const cause = TM_CAUSES.find(c => c.id === causeId);
-  document.getElementById('tma-cause').textContent = cause ? cause.label : causeId;
-  APP.tmaCapId = capturaId;
-  openOvl('otma');
+  try {
+    await db.collection('capturas').doc(capturaId).collection('pausas').add({
+      estado: 'pendiente',
+      causa: causeId,
+      solicitada_en: firebase.firestore.FieldValue.serverTimestamp(),
+      solicitada_por: APP.user.id,
+    });
+    const cause = TM_CAUSES.find(c => c.id === causeId);
+    toast('✋ Pausa pedida: ' + (cause ? cause.label : causeId));
+  } catch (e) {
+    console.error('pedir pausa:', e);
+    toast('No se pudo pedir la pausa — revisa tu conexión', false);
+  } finally { pidiendoPausa = false; }
+}
+
+// Cierra una pausa autorizada: el muestrista vuelve al trabajo
+export async function terminarPausa(capturaId) {
+  if (!capturaId || !fsOk()) return;
+  const pa = (APP.pausas || {})[capturaId];
+  endTM(capturaId);
+  syncToFS(capturaId);
   renderActivas();
+  refrescaBotonera();
+  if (!pa || !pa.id) return;
+  try {
+    await db.collection('capturas').doc(capturaId).collection('pausas').doc(pa.id).update({
+      estado: 'finalizada',
+      fin_tm: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    // El TM local ya se cerró y se sincronizó: el tiempo está bien contado.
+    // Lo que falla aquí es el registro de auditoría de la pausa.
+    console.error('terminar pausa:', e);
+    toast('Volviste al trabajo, pero no se pudo cerrar el registro de la pausa', false);
+  }
+}
+
+// Cierra cualquier pausa viva de una ficha. Se llama al firmar: una pausa
+// aprobada sin cerrar quedaría colgada, y una pendiente seguiría en la cola de
+// Lety para una ficha que ya no está en manos del muestrista.
+export async function cerrarPausasDe(capturaId) {
+  if (!capturaId || !fsOk()) return;
+  try {
+    const snap = await db.collection('capturas').doc(capturaId).collection('pausas')
+      .where('estado', 'in', ['pendiente', 'aprobada']).get();
+    await Promise.all(snap.docs.map(d => d.ref.update({
+      estado: d.data().estado === 'aprobada' ? 'finalizada' : 'cancelada',
+      fin_tm: firebase.firestore.FieldValue.serverTimestamp(),
+    }).catch(e => console.error('cerrar pausa:', e))));
+    delete (APP.pausas || {})[capturaId];
+  } catch (e) {
+    console.error('cerrarPausasDe:', e);
+  }
+}
+
+// Escucha las pausas de las fichas abiertas: en cuanto Lety autoriza una, el
+// TM arranca aquí (el cronómetro vive en este dispositivo, no en el de ella).
+export function watchPausas(capIds) {
+  (APP.unsubPausas || []).forEach(u => { try { u(); } catch (e) {} });
+  APP.unsubPausas = [];
+  APP.pausas = APP.pausas || {};
+  capIds.forEach(capId => {
+    const un = db.collection('capturas').doc(capId).collection('pausas')
+      .where('estado', 'in', ['pendiente', 'aprobada', 'rechazada'])
+      .onSnapshot(snap => {
+        // Una rechazada solo se avisa una vez y desaparece: si se quedara en
+        // la lista, taparía la siguiente solicitud de esa misma ficha.
+        const rech = snap.docs.find(d => d.data().estado === 'rechazada');
+        if (rech && !(APP.pausasVistas || {})[rech.id]) {
+          APP.pausasVistas = APP.pausasVistas || {};
+          APP.pausasVistas[rech.id] = true;
+          const cr = TM_CAUSES.find(x => x.id === rech.data().causa);
+          toast('Lety no autorizó la pausa' + (cr ? ' de ' + cr.label : '') + ' — sigue trabajando', false);
+        }
+        const viva = snap.docs.find(d => ['pendiente', 'aprobada'].includes(d.data().estado));
+        if (!viva) { delete APP.pausas[capId]; renderActivas(); refrescaBotonera(); return; }
+        const dt = viva.data();
+        APP.pausas[capId] = { id: viva.id, ...dt };
+        if (dt.estado === 'aprobada') {
+          const t = timers[capId];
+          if (t && !t.tmActive) {
+            const ms = dt.inicio_tm && dt.inicio_tm.toMillis ? dt.inicio_tm.toMillis() : Date.now();
+            startTMDesde(capId, dt.causa, ms);
+            const c = TM_CAUSES.find(x => x.id === dt.causa);
+            toast('✅ Lety autorizó tu pausa: ' + (c ? c.label : dt.causa));
+          }
+        }
+        renderActivas();
+        refrescaBotonera();
+      }, e => {
+        console.error('pausas:', e);
+        toast('No se pudo consultar el estado de tu pausa — revisa tu conexión', false);
+      });
+    APP.unsubPausas.push(un);
+  });
 }
 
 export function endTMA() {
-  endTM(APP.tmaCapId);
-  syncToFS(APP.tmaCapId); // que Lety vea el TM cerrado sin esperar al sync de 60 s
+  const id = APP.tmaCapId;
   closeOvl('otma');
-  renderActivas();
+  terminarPausa(id);
 }
 
 // ── Historial del muestrista ──

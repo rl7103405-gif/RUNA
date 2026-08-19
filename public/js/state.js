@@ -49,7 +49,11 @@ export const APP = {
   tareaId: null,      // tarea que Lety tiene abierta en el detalle
   tareaDoc: null,
   tareaFichas: {},
-  revFicha: null,    // ficha técnica de la ficha que Lety tiene abierta
+  revFicha: null,
+  pausas: {},        // capId -> pausa viva (vista del muestrista)
+  unsubPausas: [],   // listeners de esas pausas
+  pausasPend: [],    // solicitudes por autorizar (vista de Lety)
+  pausasVistas: {},  // rechazos ya avisados, para no repetir el toast    // ficha técnica de la ficha que Lety tiene abierta
   tmTarget: null,
   tmaCapId: null,
   changePinUid: null,

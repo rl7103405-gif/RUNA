@@ -4,7 +4,7 @@ import { APP, OPEN_STATES, TM_CAUSES } from './state.js';
 import { es, fmt, gv, scr, toast, confirmDlg } from './utils.js';
 import { timers, getT, elapsedOf, tmOf, tenOf, causesOf, startT, pauseT, seedFromDoc } from './timers.js';
 import { showFirma } from './firma.js';
-import { openTMFor } from './muestrista.js';
+import { openTMFor, terminarPausa } from './muestrista.js';
 
 // La ficha técnica define el punto de máquina como una tabla de 10
 // alimentadores (DEN-1 / DEN-2 / SINK2 cada uno), no como un solo trío.
@@ -175,10 +175,7 @@ export async function openCap(capturaId) {
           <span style="color:var(--rd)">TM: <span data-tf="tm" data-tid="${es(capturaId)}">${fmt(tmOf(capturaId))}</span></span>
         </div>
         ${t.tmActive ? `<div class="al alw" style="margin-bottom:10px"><span>⏸</span><span style="font-size:12px">${tmMsg}</span></div>` : ''}
-        <div class="brow">
-          <button class="btn btn-gn btn-sm" id="btn-tog" style="flex:2" data-capact="tog">${t.running ? '⏸ Pausar' : '▶ Reanudar'}</button>
-          <button class="btn btn-rd btn-sm" style="flex:1" data-capact="tm">⏸ TM</button>
-        </div>
+        <div class="brow" id="cap-btns">${botoneraPausa(capturaId)}</div>
       </div>
       <div class="fsec"><div class="ftitle">Máquina</div>
         <div class="g2">
@@ -262,6 +259,27 @@ export async function openCap(capturaId) {
   } catch (e) { console.error(e); toast('Error cargando captura', false); }
 }
 
+// El muestrista ya no para su propio cronómetro: pide la pausa y Lety la
+// autoriza. Mientras tanto el tiempo sigue corriendo.
+export function botoneraPausa(capturaId) {
+  const t = timers[capturaId] || {};
+  const pa = (APP.pausas || {})[capturaId];
+  if (pa && pa.estado === 'pendiente') {
+    return '<div class="al alw" style="flex:1;margin:0"><span>⏳</span><span style="font-size:12px">Pausa pedida — esperando a Lety</span></div>';
+  }
+  if (t.tmActive) {
+    return '<button class="btn btn-gn btn-sm" style="flex:1" data-capact="finpausa">▶ Volver al trabajo</button>';
+  }
+  return '<button class="btn btn-rd btn-sm" style="flex:1" data-capact="tm">✋ Pedir pausa</button>';
+}
+
+// Refresca SOLO la botonera de la ficha abierta. No se re-pinta el formulario
+// entero a propósito: el muestrista puede estar escribiendo sus medidas.
+export function refrescaBotonera() {
+  const cont = document.getElementById('cap-btns');
+  if (cont && APP.activeCap) cont.innerHTML = botoneraPausa(APP.activeCap);
+}
+
 // Delegación de eventos de la ficha: nada de handlers inline con datos
 // interpolados (un ID de captura manipulado podría inyectar JS)
 export function wireCapturaEvents() {
@@ -269,22 +287,12 @@ export function wireCapturaEvents() {
     const btn = e.target.closest('[data-capact]');
     if (!btn) return;
     switch (btn.dataset.capact) {
-      case 'tog': togCapTimer(); break;
+      case 'finpausa': if (APP.activeCap) terminarPausa(APP.activeCap); break;
       case 'tm': if (APP.activeCap) openTMFor(APP.activeCap); break;
       case 'sign': saveAndSign(); break;
       case 'draft': saveDraft(); break;
     }
   });
-}
-
-export function togCapTimer() {
-  const id = APP.activeCap, t = timers[id];
-  if (!t) return;
-  if (t.running) pauseT(id, true); else startT(id);
-  const btn = document.getElementById('btn-tog');
-  if (btn) btn.textContent = t.running ? '⏸ Pausar' : '▶ Reanudar';
-  const td = document.getElementById('cap-timer');
-  if (td) td.className = 'timer ' + (t.running ? 'tgn' : 'tam');
 }
 
 // Salir de la ficha: el timer sigue corriendo (la máquina sigue tejiendo);

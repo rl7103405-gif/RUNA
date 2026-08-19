@@ -455,6 +455,77 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── pausas: el muestrista PIDE, Lety AUTORIZA ──
+    //
+    // Antes el muestrista paraba su propio cronómetro cuando quería y nadie se
+    // enteraba. Lety pidió que cada pausa se solicite con su causa y que ella
+    // decida — y que el desglose quede en la tarea.
+    //
+    // POR QUÉ UNA SUBCOLECCIÓN Y NO UN CAMPO EN LA CAPTURA:
+    //   · Un solo campo se pisa con la siguiente solicitud y borra el historial
+    //     que es justo lo que se quiere conservar.
+    //   · Las reglas de /capturas solo dejan al admin escribir cuando la ficha
+    //     ya está firmada (pendiente_lety/aprobado). Sobre una ficha ACTIVA el
+    //     admin no puede escribir, así que la aprobación sería rechazada.
+    //     Aquí cada quien escribe su parte de un documento propio.
+    //
+    // TODOS los sellos de tiempo son `request.time` (hora del servidor): si el
+    // cliente pudiera declararlos, un TM se podría alargar a voluntad.
+    //
+    // El cronómetro NO se detiene al pedir la pausa — decisión del dueño: el
+    // TM cuenta desde que Lety aprueba (`inicio_tm`), no desde la solicitud.
+    match /capturas/{capId}/pausas/{pausaId} {
+      function miCaptura() {
+        return get(/databases/$(database)/documents/capturas/$(capId)).data.id_muestrista == miEmpleadoId();
+      }
+      function causaValida(c) {
+        return c in ['maquina', 'color', 'material', 'lety', 'cliente', 'falla', 'descanso', 'personal'];
+      }
+      // Lety necesita verlas todas para autorizarlas; el muestrista, las suyas.
+      allow read: if esAdmin() || (esMuestristaActual() && miCaptura());
+
+      // El dueño de la ficha solicita. Nace SIEMPRE pendiente: no puede
+      // auto-aprobarse.
+      allow create: if esMuestristaActual() && miCaptura()
+                    && request.resource.data.keys().hasOnly(['estado', 'causa', 'solicitada_en', 'solicitada_por'])
+                    && request.resource.data.estado == 'pendiente'
+                    && causaValida(request.resource.data.causa)
+                    && request.resource.data.solicitada_en == request.time
+                    && request.resource.data.solicitada_por == miEmpleadoId();
+
+      allow update: if
+        // ── Lety decide. `inicio_tm` lo pone el servidor: es el instante en
+        // que empieza a contar el tiempo muerto.
+        (esAdmin()
+         && resource.data.estado == 'pendiente'
+         && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['estado', 'decidida_en', 'decidida_por', 'inicio_tm'])
+         && request.resource.data.estado in ['aprobada', 'rechazada']
+         && request.resource.data.decidida_en == request.time
+         && request.resource.data.decidida_por == miEmpleadoId()
+         && (request.resource.data.estado != 'aprobada'
+             || request.resource.data.inicio_tm == request.time)
+         && (request.resource.data.estado != 'rechazada'
+             || !('inicio_tm' in request.resource.data)))
+        // ── El muestrista cierra su pausa cuando vuelve al trabajo.
+        || (esMuestristaActual() && miCaptura()
+            && resource.data.estado == 'aprobada'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'fin_tm'])
+            && request.resource.data.estado == 'finalizada'
+            && request.resource.data.fin_tm == request.time)
+        // ── El muestrista retira una solicitud que ya no aplica. Pasa al
+        // firmar la ficha: si la pausa quedara viva, seguiría en la cola de
+        // Lety y podría revivir con su hora original si la ficha se reabre
+        // para corrección, inflando el tiempo muerto sin que nadie la pidiera.
+        || (esMuestristaActual() && miCaptura()
+            && resource.data.estado == 'pendiente'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'fin_tm'])
+            && request.resource.data.estado == 'cancelada'
+            && request.resource.data.fin_tm == request.time);
+      // Nadie borra una pausa: es el registro de en qué se fue el tiempo.
+      allow delete: if false;
+    }
+
     // ── contadores: folios consecutivos (doc 'capturas' = { seq }) ──
     // Solo se acepta el siguiente consecutivo exacto: sin saltos ni retrocesos
     // Solo el muestrista escribe aquí: es quien crea fichas. Lety nunca crea

@@ -4,7 +4,7 @@ import { tryInitFB } from './fb.js';
 import { scr, closeOvl } from './utils.js';
 import { selectUser, numPad, backPin, clearPin, logout, openChangePinSelf, savePin } from './auth.js';
 import { mTab, loadMHist, openTMFor, endTMA, wireMuestristaEvents } from './muestrista.js';
-import { togCapTimer, backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
+import { backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
 import { clearSig, saveSig, backFirma } from './firma.js';
 import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents, wireAutollenado, ftArchivo, asignarDesdeFicha, wireFichaEvents,
   loadTareas, openTarea, backTarea, guardarDatosTarea, agregarVariante } from './admin.js';
@@ -19,7 +19,7 @@ Object.assign(window, {
   selectUser, numPad, backPin, clearPin, logout,
   openChangePinSelf, savePin,
   mTab, loadMHist, openTMFor, endTMA,
-  togCapTimer, backCaptura, saveDraft, saveAndSign,
+  backCaptura, saveDraft, saveAndSign,
   clearSig, saveSig, backFirma,
   ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev,
   ftArchivo, asignarDesdeFicha,

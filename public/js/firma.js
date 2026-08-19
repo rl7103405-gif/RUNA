@@ -72,6 +72,12 @@ export async function saveSig() {
       // Si quedó un TM abierto, se cierra aquí para que su causa quede
       // registrada en tm_causas antes de congelar los tiempos
       endTM(capturaId);
+      // Y se cierran las pausas vivas de esta ficha: una aprobada sin cerrar
+      // reviviría con su hora original si Lety pide corrección.
+      try {
+        const { cerrarPausasDe } = await import('./muestrista.js');
+        await cerrarPausasDe(capturaId);
+      } catch (e) { console.error('cerrar pausas al firmar:', e); }
       await db.collection('capturas').doc(capturaId).update({
         firma_m: url,
         estado: 'pendiente_lety',

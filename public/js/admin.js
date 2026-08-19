@@ -96,18 +96,94 @@ export function initLety() {
       if (el) el.innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>No se pudieron cargar las fichas pendientes</p></div>';
       toast('Error cargando pendientes — revisa tu conexión', false);
     }));
+  // Pausas pedidas por los muestristas, de todas las fichas a la vez.
+  // Es un collectionGroup: cada pausa vive bajo su propia captura.
+  APP.listeners.push(db.collectionGroup('pausas')
+    .where('estado', '==', 'pendiente')
+    .onSnapshot(snap => {
+      if (!APP.user || APP.user.rol !== 'lety') return;
+      APP.pausasPend = snap.docs.map(d => ({ id: d.id, ref: d.ref, data: d.data() }));
+      renderPausas();
+    }, e => {
+      console.error('pausas pendientes:', e);
+      // Sin índice de collectionGroup, Firestore rechaza la consulta: se avisa
+      // para que no parezca que nadie ha pedido pausa.
+      const w = document.getElementById('pausas-wrap');
+      const l = document.getElementById('pausas-list');
+      if (w && l) {
+        w.style.display = '';
+        l.innerHTML = '<div class="al alr"><span>⚠️</span><span style="font-size:12px">No se pudieron cargar las pausas pedidas — avisa a Roberto</span></div>';
+      }
+    }));
   const unsubCat = watchCatalogo();
   if (unsubCat) APP.listeners.push(unsubCat);
   loadRev();
 }
 
-export function setBadgePendientes(n) {
+// ── Pausas: el muestrista pide, Lety decide ──
+// Mientras ella no autorice, el cronómetro del muestrista sigue corriendo
+// (decisión del dueño), así que estas solicitudes son urgentes.
+function renderPausas() {
+  const wrap = document.getElementById('pausas-wrap');
+  const lista = document.getElementById('pausas-list');
+  if (!wrap || !lista) return;
+  const pend = APP.pausasPend || [];
+  wrap.style.display = pend.length ? '' : 'none';
+  setBadgePendientes(document.querySelectorAll('#pend-list .card').length, pend.length);
+  if (!pend.length) { lista.innerHTML = ''; return; }
+  lista.innerHTML = pend.map(({ id, data: p }) => {
+    const c = TM_CAUSES.find(x => x.id === p.causa);
+    const quien = (USERS[p.solicitada_por] || {}).nombre || p.solicitada_por;
+    return `<div class="card am">
+      <div class="dt">${es(quien)} pide pausa</div>
+      <div class="ds">${es(c ? c.label : p.causa)}${c && !c.ext ? ' · <span class="bge bpend">interna</span>' : ''}</div>
+      <div class="mr"><span style="font-size:11px;color:var(--tx3)">Pedida ${fmtDate(p.solicitada_en)} · el tiempo sigue corriendo</span><span></span></div>
+      <div class="brow" style="margin-top:8px">
+        <button class="btn btn-gn btn-sm" style="flex:1" data-pausa-ok="${es(id)}">✓ Autorizar</button>
+        <button class="btn btn-rd btn-sm" style="flex:1" data-pausa-no="${es(id)}">✕ Rechazar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let decidiendo = false;
+
+async function decidirPausa(pausaId, aprobar) {
+  if (decidiendo) return;
+  const item = (APP.pausasPend || []).find(x => x.id === pausaId);
+  if (!item) return;
+  decidiendo = true;
+  try {
+    const cambios = {
+      estado: aprobar ? 'aprobada' : 'rechazada',
+      decidida_en: firebase.firestore.FieldValue.serverTimestamp(),
+      decidida_por: APP.user.id,
+    };
+    // El TM empieza a contar AQUÍ, no cuando la pidió: hasta ahora estuvo
+    // trabajando (o esperando, pero sin autorización).
+    if (aprobar) cambios.inicio_tm = firebase.firestore.FieldValue.serverTimestamp();
+    await item.ref.update(cambios);
+    toast(aprobar ? '✅ Pausa autorizada' : 'Pausa rechazada');
+  } catch (e) {
+    console.error('decidirPausa:', e);
+    toast('No se pudo registrar la decisión — revisa tu conexión', false);
+  } finally { decidiendo = false; }
+}
+
+export function setBadgePendientes(n, pausas) {
   const b = document.getElementById('nav-pend');
   if (!b) return;
-  b.textContent = n > 99 ? '99+' : String(n);
-  b.style.display = n > 0 ? '' : 'none';
+  // El contador junta lo que espera decisión de Lety: fichas por revisar y
+  // pausas por autorizar (estas último urgen: el cronómetro sigue corriendo).
+  const p = pausas === undefined ? (APP.pausasPend || []).length : pausas;
+  const total = (n || 0) + p;
+  b.textContent = total > 99 ? '99+' : String(total);
+  b.style.display = total > 0 ? '' : 'none';
+  b.style.background = p > 0 ? 'var(--am)' : 'var(--rd-full)';
   const btn = b.closest('.nb');
-  if (btn) btn.setAttribute('aria-label', n > 0 ? `Revisar — ${n} ficha${n === 1 ? '' : 's'} pendiente${n === 1 ? '' : 's'}` : 'Revisar');
+  if (btn) btn.setAttribute('aria-label', total > 0
+    ? `Revisar — ${n || 0} ficha(s) pendiente(s)${p ? ' y ' + p + ' pausa(s) por autorizar' : ''}`
+    : 'Revisar');
 }
 
 // ── Asignar ──
@@ -1118,6 +1194,13 @@ export function wireAdminEvents() {
     if (btn) openRev(btn.dataset.rev, false);
   });
   // "En proceso": la ficha aún no está firmada, así que se abre en consulta
+  const pausasList = document.getElementById('pausas-list');
+  if (pausasList) pausasList.addEventListener('click', e => {
+    const ok = e.target.closest('[data-pausa-ok]');
+    if (ok) { decidirPausa(ok.dataset.pausaOk, true); return; }
+    const no = e.target.closest('[data-pausa-no]');
+    if (no) decidirPausa(no.dataset.pausaNo, false);
+  });
   const procList = document.getElementById('proc-list');
   if (procList) procList.addEventListener('click', e => {
     const card = e.target.closest('[data-proc]');
