@@ -46,6 +46,9 @@ export const APP = {
   sigData: null,
   revCap: null,
   revFolio: null,
+  tareaId: null,      // tarea que Lety tiene abierta en el detalle
+  tareaDoc: null,
+  tareaFichas: {},
   tmTarget: null,
   tmaCapId: null,
   changePinUid: null,

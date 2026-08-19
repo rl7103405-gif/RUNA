@@ -87,6 +87,22 @@ service cloud.firestore {
     }
 
     // ── Helpers de datos (validación de forma, igual que antes) ──
+    // Un campo vacío se puede llenar; uno que YA tiene valor queda congelado.
+    // Es lo que permite agregar la OT después sin abrir la puerta a reescribir
+    // el modelo o el cliente de una tarea que el muestrista ya está trabajando.
+    function soloSeCompleta(campo) {
+      return resource.data.get(campo, '') == ''
+        || request.resource.data.get(campo, '') == resource.data.get(campo, '');
+    }
+    // Igual que soloSeCompleta, pero exigiendo forma. Estos campos se
+    // congelan en cuanto se llenan y NO hay ningún camino para corregirlos
+    // después, así que un valor mal tipado (un número donde va la OT) sería
+    // permanente.
+    function completaTexto(campo, largo) {
+      return soloSeCompleta(campo)
+        && request.resource.data.get(campo, '') is string
+        && request.resource.data.get(campo, '').size() <= largo;
+    }
     function esMuestristaId(id) {
       return id in ['israel', 'jesus'];
     }
@@ -200,7 +216,59 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'terminado_en'])
             && resource.data.estado == 'terminado'
             && request.resource.data.estado == 'en_proceso'
-            && request.resource.data.get('terminado_en', null) == null);
+            && request.resource.data.get('terminado_en', null) == null)
+        // ── Lety AMPLÍA una tarea ya asignada. Es la única rama que toca algo
+        // más que el estado, y existe por dos casos reales del negocio:
+        //   · La OT no existe cuando se crea la tarea — se genera después,
+        //     cuando la muestra se sube al ERP.
+        //   · Un pack de 6 se vuelve de 12 si el cliente pide derecho e
+        //     izquierdo a media marcha.
+        // SOLO AGREGA, nunca modifica:
+        //   · `variante_codigos` y `variantes` solo pueden CRECER por el
+        //     final: su prefijo debe quedar idéntico. Así una variante ya
+        //     capturada no puede desaparecer, cambiar de nombre ni que le
+        //     reescriban los pares, que es lo que rompería el vínculo con
+        //     sus capturas.
+        //   · Los datos del pedido solo pueden pasar de vacío a lleno.
+        //   · `estado`, `asignado_a`, `modelo`, `cliente` y `creado_por` no
+        //     están en el hasOnly, así que quedan congelados.
+        // LÍMITE CONOCIDO: las reglas no pueden contar elementos únicos de una
+        // lista, así que un código DUPLICADO en variante_codigos pasaría este
+        // filtro. No es una fuga (solo el admin escribe aquí) pero sí ensucia
+        // la tarea: el cliente lo valida antes de escribir.
+        // ── Lety COMPLETA datos que faltaban (rama sin variantes).
+        // Va aparte de la ampliación a propósito: si compartieran rama, cada
+        // vez que Lety llenara la OT se re-evaluaría la unicidad de
+        // `variante_codigos`, y una tarea vieja con un código repetido
+        // quedaría bloqueada para siempre sin que nadie entienda por qué.
+        || (esAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['ot', 'po', 'codigo_quini', 'notas', 'agujado', 'tipo_producto', 'talla', 'genero'])
+            && completaTexto('ot', 40) && completaTexto('po', 40)
+            && completaTexto('codigo_quini', 60) && completaTexto('agujado', 10)
+            && completaTexto('tipo_producto', 120) && completaTexto('talla', 40)
+            && completaTexto('genero', 40) && completaTexto('notas', 500))
+        // ── Lety AGREGA variantes (rama sin datos del pedido).
+        || (esAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['variantes', 'variante_codigos'])
+            && request.resource.data.variantes is list
+            && request.resource.data.variante_codigos is list
+            && request.resource.data.variante_codigos.size() > resource.data.variante_codigos.size()
+            && request.resource.data.variante_codigos.size() <= 40
+            // APPEND-ONLY DE VERDAD: el prefijo debe ser IDÉNTICO al de antes.
+            // `hasAll` no bastaba — dejaba reordenar la lista, duplicar un
+            // código para inflar el tamaño, y no protegía los objetos de
+            // `variantes` (se podía reescribir la descripción o los pares de
+            // una variante que el muestrista ya está capturando).
+            && request.resource.data.variante_codigos[0:resource.data.variante_codigos.size()]
+                 == resource.data.variante_codigos
+            && request.resource.data.variantes[0:resource.data.variantes.size()]
+                 == resource.data.variantes
+            // Sin códigos repetidos: son la identidad de cada ficha
+            && request.resource.data.variante_codigos.toSet().size()
+                 == request.resource.data.variante_codigos.size()
+            && request.resource.data.variantes.size() == request.resource.data.variante_codigos.size());
       allow delete: if false;
     }
 
@@ -228,7 +296,31 @@ service cloud.firestore {
       // solo ampliaría la superficie de escritura sin que nadie la use. Si
       // algún día se agrega "corregir complejidad" en la vista de Lety, esta
       // regla se abre JUNTO con esa pantalla, no antes.
-      allow update, delete: if false;
+      // Se abre SOLO para el caso de ampliar la tarea: cuando Lety agrega
+      // variantes nuevas, cada una necesita su complejidad. Igual que arriba,
+      // solo se AGREGA: las llaves viejas deben seguir todas presentes, así
+      // que no se puede reescribir la complejidad de un código ya trabajado
+      // (ese dato alimenta los puntos del muestrista).
+      // Solo se AGREGAN complejidades de códigos nuevos. `hasAll` sobre las
+      // llaves no bastaba: conservaba los códigos viejos pero dejaba cambiar
+      // su VALOR en la misma escritura, y esa letra alimenta los puntos del
+      // muestrista. Con MapDiff se exige que ninguna llave se retire ni
+      // cambie, y que al menos una se agregue.
+      // Bonus: `values().hasOnly()` sí puede validar los valores de un map
+      // (lo que no se podía hacer en el `create`, donde el límite documentado
+      // sigue vigente porque ahí no hay un mapa previo con el que comparar).
+      allow update: if esAdmin()
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['complejidad_por_codigo'])
+                    && request.resource.data.complejidad_por_codigo is map
+                    && request.resource.data.complejidad_por_codigo.keys().size() <= 40
+                    && request.resource.data.complejidad_por_codigo.values().hasOnly(['A', 'B', 'C'])
+                    && request.resource.data.complejidad_por_codigo
+                         .diff(resource.data.get('complejidad_por_codigo', {})).removedKeys().size() == 0
+                    && request.resource.data.complejidad_por_codigo
+                         .diff(resource.data.get('complejidad_por_codigo', {})).changedKeys().size() == 0
+                    && request.resource.data.complejidad_por_codigo.keys().hasOnly(
+                         getAfter(/databases/$(database)/documents/desarrollos/$(devId)).data.variante_codigos);
+      allow delete: if false;
     }
 
     // ── fichas técnicas (subcolección PRIVADA de cada desarrollo) ──
@@ -251,7 +343,11 @@ service cloud.firestore {
       allow create: if esAdmin()
                     && request.resource.data.codigo == codigo
                     && request.resource.data.id_desarrollo == devId
-                    && codigo.size() > 0 && codigo.size() <= 60;
+                    && codigo.size() > 0 && codigo.size() <= 60
+                    // La ficha debe ser de una variante REAL de esta tarea:
+                    // sin esto se podía colgar una ficha técnica de un código
+                    // ajeno al desarrollo.
+                    && codigo in getAfter(/databases/$(database)/documents/desarrollos/$(devId)).data.variante_codigos;
       allow update, delete: if false;
     }
 
@@ -347,6 +443,15 @@ service cloud.firestore {
                           && resource.data.estado in ['activo', 'pausado', 'correccion'])
                          || (esAdmin() && resource.data.estado in ['pendiente_lety', 'aprobado'])
                        );
+      // ── Lety rellena la OT/PO que no existían cuando nació la ficha.
+      // `createCap` copia esos datos del desarrollo al crear la captura, así
+      // que una ficha empezada antes de que se generara la OT se quedaría sin
+      // ella para siempre (y el CSV saldría incompleto). Solo de vacío a
+      // lleno, sin tocar ningún otro campo ni el estado.
+      allow update: if esAdmin()
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ot', 'po', 'agujado'])
+                    && completaTexto('ot', 40) && completaTexto('po', 40)
+                    && completaTexto('agujado', 10);
       allow delete: if false;
     }
 

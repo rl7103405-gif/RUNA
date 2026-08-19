@@ -162,6 +162,9 @@
           <div class="fg"><label class="fl">Talla</label><input class="fi" id="l-tal" placeholder="Unitalla"></div>
         </div>
         <div class="fg"><label class="fl">Tipo de producto</label><input class="fi" id="l-tprod" placeholder="6 Pack Mid Crew Básico Liso"></div>
+        <div class="fg"><label class="fl">Agujado (número de agujas)</label>
+          <select class="fi" id="l-ag"><option value="">— elegir —</option><option>108</option><option>120</option><option>132</option><option>144</option><option>200</option></select>
+        </div>
         <div class="fg">
           <label class="fl">Complejidad (solo visible para ti)</label>
           <select class="fi" id="l-comp">
@@ -261,9 +264,27 @@
       </div>
       <div class="al alw"><span>🔑</span><span style="font-size:12px">Si alguien olvida su PIN, restablécelo desde <strong>Firebase Console → Authentication → Users</strong> → selecciona su cuenta → <strong>Restablecer contraseña</strong>.</span></div>
     </div>
+    <!-- TAREAS ASIGNADAS -->
+    <div id="lt4" class="tp">
+      <div class="stitle">Tareas asignadas</div>
+      <div class="g2" style="gap:8px;margin-bottom:12px">
+        <select class="fi" id="tk-estado" onchange="loadTareas()">
+          <option value="abiertas">En curso</option>
+          <option value="todas">Todas</option>
+          <option value="terminado">Terminadas</option>
+        </select>
+        <select class="fi" id="tk-quien" onchange="loadTareas()">
+          <option value="all">Los dos</option>
+          <option value="israel">Israel</option>
+          <option value="jesus">Jesús</option>
+        </select>
+      </div>
+      <div id="tk-list"><div class="empty"><div class="ico">⏳</div><p>Cargando tareas…</p></div></div>
+    </div>
   </div>
   <nav class="bnav">
     <button class="nb on" onclick="ltTab(0,this)"><span class="ico">➕</span>Asignar</button>
+    <button class="nb" onclick="ltTab(4,this)"><span class="ico">📋</span>Tareas</button>
     <button class="nb" onclick="ltTab(1,this)"><span class="ico">📝</span>Revisar<span class="nbadge" id="nav-pend" style="display:none">0</span></button>
     <button class="nb" onclick="ltTab(2,this)"><span class="ico">📊</span>Dashboard</button>
     <button class="nb" onclick="ltTab(3,this)"><span class="ico">⚙️</span>Config</button>
@@ -295,6 +316,15 @@
     <button class="btn btn-am" onclick="saveSig()">✓ Confirmar firma</button>
     <button class="btn btn-gh" onclick="backFirma()">Cancelar</button>
   </div>
+</div>
+
+<!-- ════ sT: DETALLE DE TAREA (Lety) ════ -->
+<div id="sT" class="scr">
+  <div class="hdr">
+    <button onclick="backTarea()" style="background:none;border:none;color:var(--tx2);font-size:22px;cursor:pointer;padding:4px;flex-shrink:0">←</button>
+    <h1 id="tk-title">Tarea</h1>
+  </div>
+  <div class="body" id="tk-body"></div>
 </div>
 
 <!-- ════ sR: REVISIÓN LETY ════ -->

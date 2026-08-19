@@ -6,7 +6,8 @@ import { selectUser, numPad, backPin, clearPin, logout, openChangePinSelf, saveP
 import { mTab, loadMHist, openTMFor, endTMA, wireMuestristaEvents } from './muestrista.js';
 import { togCapTimer, backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
 import { clearSig, saveSig, backFirma } from './firma.js';
-import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents, wireAutollenado, ftArchivo, asignarDesdeFicha, wireFichaEvents } from './admin.js';
+import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents, wireAutollenado, ftArchivo, asignarDesdeFicha, wireFichaEvents,
+  loadTareas, openTarea, backTarea, guardarDatosTarea, agregarVariante } from './admin.js';
 import { loadDB } from './dashboard.js';
 import { exportCSV, exportExcel } from './export.js';
 import { openCatalogo, catArchivo, wireCatalogoEvents } from './catalogo.js';
@@ -22,6 +23,7 @@ Object.assign(window, {
   clearSig, saveSig, backFirma,
   ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev,
   ftArchivo, asignarDesdeFicha,
+  loadTareas, openTarea, backTarea, guardarDatosTarea, agregarVariante,
   loadDB, exportCSV, exportExcel,
   openCatalogo, catArchivo,
 });

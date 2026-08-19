@@ -37,6 +37,7 @@ export const EXPORT_COLUMNS = [
   { header: 'ten_min',            type: 'num',  w: 10, get: d => min(tenFromDoc(d)) },
   { header: 'maquina_marca',      type: 'txt',  w: 14, get: d => t(d.maquina_marca) },
   { header: 'maquina_numero',     type: 'txt',  w: 14, get: d => t(d.maquina_numero) },
+  { header: 'agujado',            type: 'txt',  w: 10, get: d => t(d.agujado) },
   { header: 't_ciclo_min',        type: 'txt',  w: 12, get: d => t(d.t_ciclo_min) },
   { header: 't_ciclo_seg',        type: 'txt',  w: 12, get: d => t(d.t_ciclo_seg) },
   { header: 'peso_salida_g',      type: 'txt',  w: 13, get: d => t(d.peso_sal) },

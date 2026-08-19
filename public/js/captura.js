@@ -104,7 +104,7 @@ async function createCap(devId, cod) {
         modelo: dd.modelo, cliente: dd.cliente, ot: dd.ot, po: dd.po, tipo_producto: dd.tipo_producto || '',
         estado: 'activo', elapsed_seg: 0, tm_seg: 0, tm_causas: {},
         dt_inicio: firebase.firestore.FieldValue.serverTimestamp(),
-        maquina_marca: '', maquina_numero: '',
+        maquina_marca: '', maquina_numero: '', agujado: dd.agujado || '',
         med_sh: { A: '', B: '', C: '', D: '', E: '' }, med_h: { A: '', B: '', C: '', D: '', E: '' },
         t_ciclo_min: '', t_ciclo_seg: '', peso_sal: '', peso_cer: '',
         giros: { el: '', tb: '', pl: '', rb: '' }, vels: { el: '', tb: '', tp: '', pl: '' },
@@ -178,6 +178,12 @@ export async function openCap(capturaId) {
         <div class="g2">
           <div class="fg"><label class="fl">Marca</label><input class="fi" id="f-mm" value="${es(d.maquina_marca)}" placeholder="Zhenxing"></div>
           <div class="fg"><label class="fl">Número</label><input class="fi" id="f-mn" value="${es(d.maquina_numero)}" placeholder="71"></div>
+          <div class="fg"><label class="fl">Agujado</label>
+            <select class="fi" id="f-ag">
+              <option value="">— elegir —</option>
+              ${['108', '120', '132', '144', '200'].map(n => `<option${String(d.agujado) === n ? ' selected' : ''}>${n}</option>`).join('')}
+            </select>
+          </div>
         </div>
       </div>
       <div class="fsec"><div class="ftitle">Medidas de salida (cm)</div>
@@ -311,7 +317,7 @@ async function saveCapData() {
   const sh = {}, mh = {};
   ['A', 'B', 'C', 'D', 'E'].forEach(k => { sh[k] = gv('sh' + k); mh[k] = gv('mh' + k); });
   await db.collection('capturas').doc(id).update({
-    maquina_marca: gv('f-mm'), maquina_numero: gv('f-mn'),
+    maquina_marca: gv('f-mm'), maquina_numero: gv('f-mn'), agujado: gv('f-ag'),
     med_sh: sh, med_h: mh,
     t_ciclo_min: gv('f-cm'), t_ciclo_seg: gv('f-cs'),
     peso_sal: gv('f-ps'), peso_cer: gv('f-pc'),
@@ -345,6 +351,7 @@ export async function saveAndSign() {
   const faltan = [];
   if (!gv('f-mm').trim() && !gv('f-mn').trim()) faltan.push('máquina');
   if (!gv('f-pr').trim()) faltan.push('pares producidos');
+  if (!gv('f-ag').trim()) faltan.push('agujado');
   if (['A', 'B', 'C', 'D', 'E'].every(k => !gv('sh' + k).trim() && !gv('mh' + k).trim())) faltan.push('medidas');
   if (faltan.length) {
     confirmDlg('Ficha incompleta', 'Faltan datos: ' + faltan.join(', ') + '. ¿Firmar de todas formas?', 'Firmar así', doSign);

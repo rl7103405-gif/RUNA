@@ -59,17 +59,18 @@ export async function reconciliarEstadoTarea(devId) {
     // pantalla se vea completa. Con el aviso, Lety puede reabrir y volver a
     // aprobar una ficha para forzar el recálculo.
     console.error('reconciliarEstadoTarea:', e);
-    toast('La ficha se guardó, pero no se pudo cerrar la tarea — avisa a Roberto', false);
+    toast('El cambio se guardó, pero no se pudo actualizar el estado de la tarea — avisa a Roberto', false);
   }
 }
 
 export function ltTab(i, btn) {
-  [0, 1, 2, 3].forEach(j => document.getElementById('lt' + j).classList.remove('on'));
+  [0, 1, 2, 3, 4].forEach(j => { const e = document.getElementById('lt' + j); if (e) e.classList.remove('on'); });
   document.getElementById('lt' + i).classList.add('on');
   document.querySelectorAll('#sL .nb').forEach(b => b.classList.remove('on'));
   btn.classList.add('on');
   if (i === 1) loadRev();
   if (i === 2) loadDB();
+  if (i === 4) loadTareas();
 }
 
 export function initLety() {
@@ -131,7 +132,7 @@ export function setMode(mode) {
     // asignar() pudiera usar si el botón se llegara a colar
     APP.vars = [];
     renderVars();
-    ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-gen', 'l-tal', 'l-tprod', 'l-notas', 's-cod', 's-desc', 's-pares', 's-pack', 'vc', 'vd', 'vp', 'vpk'].forEach(id => {
+    ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-gen', 'l-tal', 'l-tprod', 'l-ag', 'l-notas', 's-cod', 's-desc', 's-pares', 's-pack', 'vc', 'vd', 'vp', 'vpk'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -482,7 +483,7 @@ export async function asignar() {
     batch.set(devRef, {
       ot: gv('l-ot'), po: gv('l-po'), codigo_quini: gv('l-cq'),
       modelo: mod, cliente: gv('l-cli'),
-      genero: gv('l-gen'), talla: gv('l-tal'), tipo_producto: gv('l-tprod'),
+      genero: gv('l-gen'), talla: gv('l-tal'), tipo_producto: gv('l-tprod'), agujado: gv('l-ag'),
       asignado_a: gv('l-asig'),
       notas: gv('l-notas'), variantes, variante_codigos: variantes.map(v => v.codigo),
       estado: 'pendiente',
@@ -496,7 +497,7 @@ export async function asignar() {
     await batch.commit();
     APP.vars = [];
     renderVars();
-    ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-gen', 'l-tal', 'l-tprod', 'l-notas', 's-cod', 's-desc', 's-pares', 's-pack'].forEach(id => {
+    ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-gen', 'l-tal', 'l-tprod', 'l-ag', 'l-notas', 's-cod', 's-desc', 's-pares', 's-pack'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -572,6 +573,7 @@ export async function openRev(capturaId, readOnly = false) {
         <div class="g2" style="font-size:13px">
           <div><label class="fl">Marca</label>${es(d.maquina_marca) || '—'}</div>
           <div><label class="fl">Número</label>${es(d.maquina_numero) || '—'}</div>
+          <div><label class="fl">Agujado</label>${es(d.agujado) || '—'}</div>
         </div>
       </div>
       <div class="fsec"><div class="ftitle">Medidas</div>
@@ -730,6 +732,319 @@ export function reabrirFicha() {
   );
 }
 
+
+// ══════════════════════════════════════════════════════════════════════
+// Tareas asignadas: ver lo que Lety ya dejó, y AMPLIARLO
+//
+// Una tarea no se edita — se AGREGA. Es la regla que puso la propia Lety y la
+// que hacen cumplir las reglas de Firestore: los datos del pedido solo pasan
+// de vacío a lleno, y las variantes solo se suman. Dos casos reales:
+//   · La OT no existe al crear la tarea (se genera al subir la muestra al ERP).
+//   · Un pack de 6 se vuelve de 12 si el cliente pide derecho e izquierdo.
+// ══════════════════════════════════════════════════════════════════════
+let TAREAS = [];
+
+export async function loadTareas() {
+  if (!fsOk()) return;
+  const el = document.getElementById('tk-list');
+  try {
+    const quien = gv('tk-quien') || 'all';
+    const filtro = gv('tk-estado') || 'abiertas';
+    let q = db.collection('desarrollos');
+    if (quien !== 'all') q = q.where('asignado_a', '==', quien);
+    const snap = await q.get();
+    let docs = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+    if (filtro === 'abiertas') docs = docs.filter(d => d.data.estado !== 'terminado');
+    else if (filtro === 'terminado') docs = docs.filter(d => d.data.estado === 'terminado');
+    // Más recientes primero. El orden va en cliente para no pedir índice.
+    docs.sort((a, b) => (b.data.fecha_creacion && b.data.fecha_creacion.toMillis ? b.data.fecha_creacion.toMillis() : 0)
+                      - (a.data.fecha_creacion && a.data.fecha_creacion.toMillis ? a.data.fecha_creacion.toMillis() : 0));
+    TAREAS = docs;
+    if (!el) return;
+    el.innerHTML = docs.length === 0
+      ? '<div class="empty"><div class="ico">📋</div><p>Sin tareas en este filtro</p></div>'
+      : docs.map(({ id, data: d }) => {
+          const n = (d.variante_codigos || []).length;
+          const falta = [];
+          if (!String(d.ot || '').trim()) falta.push('OT');
+          if (!String(d.po || '').trim()) falta.push('PO');
+          const bge = d.estado === 'terminado' ? '<span class="bge bok">terminada</span>'
+            : d.estado === 'en_proceso' ? '<span class="bge bpend">en proceso</span>'
+            : '<span class="bge bpend">pendiente</span>';
+          return '<div class="card" style="margin-bottom:8px">'
+            + '<div style="display:flex;align-items:center;gap:8px">'
+            + '<span style="font-size:14px;font-weight:700;flex:1">' + es(d.modelo) + '</span>' + bge + '</div>'
+            + '<div class="mr"><span>' + (es(d.cliente) || '—') + ' · '
+            + ((USERS[d.asignado_a] || {}).nombre || es(d.asignado_a)) + '</span><span>'
+            + es(n) + ' variante' + (n === 1 ? '' : 's') + '</span></div>'
+            + '<div class="mr"><span>' + (d.ot ? 'OT ' + es(d.ot) : '') + (d.po ? ' · PO ' + es(d.po) : '')
+            + (falta.length ? ' <span class="bge bpend">falta ' + es(falta.join(' y ')) + '</span>' : '')
+            + '</span><span>' + fmtDate(d.fecha_creacion) + '</span></div>'
+            + '<button class="btn btn-bl btn-sm" style="margin-top:8px;width:100%" data-tarea="' + es(id) + '">📋 Ver y ampliar</button>'
+            + '</div>';
+        }).join('');
+  } catch (e) {
+    console.error('loadTareas:', e);
+    if (el) el.innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>No se pudieron cargar las tareas</p></div>';
+    toast('Error cargando tareas — revisa tu conexión', false);
+  }
+}
+
+export function backTarea() { scr('sL'); loadTareas(); }
+
+// Detalle: datos del pedido, variantes con su avance, y su ficha técnica
+export async function openTarea(devId) {
+  if (!fsOk()) return;
+  APP.tareaId = devId;
+  const cont = document.getElementById('tk-body');
+  scr('sT');
+  cont.innerHTML = '<div class="empty"><div class="ico">⏳</div><p>Cargando…</p></div>';
+  try {
+    const [devSnap, capsSnap, ftSnap] = await Promise.all([
+      db.collection('desarrollos').doc(devId).get(),
+      db.collection('capturas').where('id_desarrollo', '==', devId).get(),
+      db.collection('desarrollos_privado').doc(devId).collection('fichas_tecnicas').get(),
+    ]);
+    if (APP.tareaId !== devId) return; // abrió otra mientras cargaba
+    const d = devSnap.data();
+    if (!d) { toast('Tarea no encontrada', false); scr('sL'); return; }
+    APP.tareaDoc = d;
+    const caps = capsSnap.docs.map(x => x.data());
+    const fichas = {};
+    ftSnap.docs.forEach(x => { fichas[x.id] = x.data(); });
+    APP.tareaFichas = fichas;
+    document.getElementById('tk-title').textContent = d.modelo || 'Tarea';
+
+    const estadoDe = cod => {
+      const suyas = caps.filter(c => c.codigo_variante === cod);
+      const abierta = suyas.some(c => ['activo', 'pausado', 'correccion', 'pendiente_lety'].includes(c.estado));
+      if (suyas.some(c => c.estado === 'aprobado') && !abierta) return ['aprobada', 'bok'];
+      if (suyas.some(c => c.estado === 'pendiente_lety')) return ['con Lety', 'bpend'];
+      if (suyas.some(c => c.estado === 'correccion')) return ['corrección', 'brd'];
+      if (suyas.some(c => ['activo', 'pausado'].includes(c.estado))) return ['en curso', 'bpend'];
+      return ['sin iniciar', 'bpend'];
+    };
+    const faltaOT = !String(d.ot || '').trim();
+    const faltaPO = !String(d.po || '').trim();
+    const faltaAg = !String(d.agujado || '').trim();
+    const cab = [d.tipo_producto, d.genero, d.talla && ('Talla ' + d.talla), d.agujado && ('Agujado ' + d.agujado)]
+      .filter(Boolean).map(es).join(' · ');
+
+    const variantes = (d.variantes || []).map(v => {
+      const par = estadoDe(v.codigo);
+      const ft = fichas[v.codigo];
+      return '<div class="vi" style="flex-wrap:wrap">'
+        + '<div style="flex:1;min-width:140px"><div class="vcod">' + es(v.codigo) + '</div>'
+        + '<div style="font-size:12px;color:var(--tx2)">' + (es(v.descripcion) || '—')
+        + (v.pares_requeridos ? ' · ' + es(v.pares_requeridos) + ' pares' : '') + '</div></div>'
+        + '<span class="bge ' + par[1] + '" style="flex-shrink:0">' + es(par[0]) + '</span>'
+        + (ft ? '<button class="btn btn-gh btn-sm" style="width:auto;padding:8px 10px" data-ftver="' + es(v.codigo) + '">📄 Ficha técnica</button>'
+              : '<span style="font-size:11px;color:var(--tx3)">sin ficha técnica</span>')
+        + '<div id="ftdet-' + es(v.codigo) + '" style="flex-basis:100%"></div>'
+        + '</div>';
+    }).join('');
+
+    const completar = (faltaOT || faltaPO || faltaAg)
+      ? '<div class="fsec"><div class="ftitle">Completar datos que faltaban</div>'
+        + '<div class="al ali"><span>ℹ️</span><span style="font-size:12px">Solo se puede llenar lo que está vacío; lo ya capturado no se cambia.</span></div>'
+        + '<div class="g2">'
+        + (faltaOT ? '<div class="fg"><label class="fl">OT</label><input class="fi" id="tk-ot" placeholder="7735"></div>' : '')
+        + (faltaPO ? '<div class="fg"><label class="fl">PO</label><input class="fi" id="tk-po" placeholder="2422"></div>' : '')
+        + '</div>'
+        + (faltaAg ? '<div class="fg"><label class="fl">Agujado</label><select class="fi" id="tk-ag"><option value="">— elegir —</option><option>108</option><option>120</option><option>132</option><option>144</option><option>200</option></select></div>' : '')
+        + '<button class="btn btn-am btn-sm" style="width:100%" onclick="guardarDatosTarea()">💾 Guardar datos</button></div>'
+      : '';
+
+    cont.innerHTML = '<div class="card bl">'
+      + '<div class="dt">' + es(d.modelo) + (d.cliente ? ' · ' + es(d.cliente) : '') + '</div>'
+      + '<div class="ds">' + (cab || 'Sin datos de producto') + '</div>'
+      + '<div class="mr"><span>' + ((USERS[d.asignado_a] || {}).nombre || es(d.asignado_a)) + '</span>'
+      + '<span>' + (d.ot ? 'OT ' + es(d.ot) : 'sin OT') + (d.po ? ' · PO ' + es(d.po) : '') + '</span></div>'
+      + '<div class="mr"><span>Creada ' + fmtDate(d.fecha_creacion) + '</span><span>' + es(d.estado) + '</span></div>'
+      + (d.notas ? '<div class="mr"><span style="font-size:12px">📌 ' + es(d.notas) + '</span></div>' : '')
+      + '</div>'
+      + completar
+      + '<div class="stitle">Variantes (' + es((d.variante_codigos || []).length) + ')</div>'
+      + variantes
+      + '<div class="fsec"><div class="ftitle">Agregar variante</div>'
+      + '<div class="al ali"><span>➕</span><span style="font-size:12px">Para cuando el cliente pide más colores o derecho e izquierdo sobre una tarea ya empezada. Las variantes que ya existen no se tocan.</span></div>'
+      + '<div class="g2">'
+      + '<div class="fg"><label class="fl">Código</label><input class="fi" id="tk-vc" placeholder="2798"></div>'
+      + '<div class="fg"><label class="fl">Descripción / color</label><input class="fi" id="tk-vd" placeholder="Negro"></div>'
+      + '</div><div class="g2">'
+      + '<div class="fg"><label class="fl">Pares requeridos</label><input class="fi" type="number" min="0" id="tk-vp" placeholder="6000"></div>'
+      + '<div class="fg"><label class="fl">Complejidad</label><select class="fi" id="tk-vx"><option value="A">A — básico</option><option value="B">B — con diseño</option><option value="C">C — jacquard</option></select></div>'
+      + '</div>'
+      + '<button class="btn btn-am btn-sm" style="width:100%" onclick="agregarVariante()">➕ Agregar a esta tarea</button></div>';
+  } catch (e) {
+    console.error('openTarea:', e);
+    cont.innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>No se pudo cargar la tarea</p></div>';
+  }
+}
+
+// Muestra u oculta los valores objetivo de una variante
+function verFichaTecnica(cod) {
+  const cont = document.getElementById('ftdet-' + cod);
+  if (!cont) return;
+  if (cont.innerHTML) { cont.innerHTML = ''; return; }
+  const ft = (APP.tareaFichas || {})[cod];
+  if (!ft) { cont.innerHTML = '<div style="font-size:12px;color:var(--tx3)">Sin ficha técnica</div>'; return; }
+  const fila = (et, v) => v ? '<div class="mr"><span>' + es(et) + '</span><span style="font-family:var(--mono);font-size:12px">' + es(v) + '</span></div>' : '';
+  const med = ['A', 'B', 'C', 'D', 'E'].map(k => {
+    const sh = (ft.med_sh || {})[k], h = (ft.med_h || {})[k], tol = (ft.med_tol || {})[k];
+    if (!sh && !h) return '';
+    return '<div class="mr"><span>' + k + '</span><span style="font-family:var(--mono);font-size:12px">'
+      + es(sh || '—') + ' / ' + es(h || '—') + (tol ? ' ±' + es(tol) : '') + '</span></div>';
+  }).join('');
+  const ciclo = [ft.t_ciclo_min, ft.t_ciclo_seg].filter(Boolean).length
+    ? es(ft.t_ciclo_min || '0') + 'm ' + es(ft.t_ciclo_seg || '0') + 's' : '';
+  cont.innerHTML = '<div class="card" style="margin:8px 0 0;background:var(--s2)">'
+    + '<div class="ftitle">Ficha técnica · ' + es(ft.hoja_origen || cod) + '</div>'
+    + fila('Máquina', [ft.maquina_marca, ft.maquina_numero].filter(Boolean).join(' #'))
+    + fila('Agujas', ft.agujas)
+    + fila('Peso salida / cerrado', [ft.peso_sal, ft.peso_cer].filter(Boolean).join(' / '))
+    + fila('Tiempo de ciclo', ciclo)
+    + (med ? '<div class="ftitle" style="margin-top:8px">Medidas (sin hormar / hormado)</div>' + med : '')
+    + fila('Giros el/tb/pl/rb', ['el', 'tb', 'pl', 'rb'].map(k => (ft.giros || {})[k] || '—').join(' / '))
+    + fila('Vels el/tb/tp/pl', ['el', 'tb', 'tp', 'pl'].map(k => (ft.vels || {})[k] || '—').join(' / '))
+    + ((ft.faltantes_al_importar || []).length
+        ? '<div class="mr"><span style="font-size:11px;color:var(--tx3)">Llegó sin: ' + es(ft.faltantes_al_importar.join(', ')) + '</span></div>' : '')
+    + '</div>';
+}
+
+let guardandoTarea = null; // devId en curso
+
+// Completa OT / PO / agujado. Las reglas solo aceptan pasar de vacío a lleno.
+export async function guardarDatosTarea() {
+  if (!fsOk() || !APP.tareaId) return;
+  if (guardandoTarea) { toast('Espera: se está guardando la tarea anterior', false); return; }
+  const cambios = {};
+  const ot = gv('tk-ot').trim(), po = gv('tk-po').trim(), ag = gv('tk-ag').trim();
+  if (ot) cambios.ot = ot;
+  if (po) cambios.po = po;
+  if (ag) cambios.agujado = ag;
+  if (Object.keys(cambios).length === 0) { toast('Escribe algún dato primero', false); return; }
+  // Se fija la tarea ANTES de escribir: si Lety abre otra mientras esto
+  // viaja, el resultado viejo no debe arrastrarla de vuelta a esta pantalla.
+  const devId = APP.tareaId;
+  guardandoTarea = devId;
+  try {
+    await db.collection('desarrollos').doc(devId).update(cambios);
+    // Las fichas que ya nacieron copiaron la OT/PO vacías del desarrollo
+    // (createCap las denormaliza al crear). Sin este relleno, una ficha
+    // empezada antes de que existiera la OT saldría sin ella en el CSV.
+    const propaga = {};
+    if (cambios.ot) propaga.ot = cambios.ot;
+    if (cambios.po) propaga.po = cambios.po;
+    if (cambios.agujado) propaga.agujado = cambios.agujado;
+    if (Object.keys(propaga).length) {
+      try {
+        const caps = await db.collection('capturas').where('id_desarrollo', '==', devId).get();
+        // El agujado vive también en el formulario del muestrista: si se lo
+        // rellenamos a una ficha que él tiene abierta, su próximo "guardar"
+        // lo revertiría al valor de su pantalla. Por eso solo se rellena en
+        // fichas ya cerradas; en las abiertas lo captura él.
+        const ABIERTAS = ['activo', 'pausado', 'correccion'];
+        const pend = caps.docs.filter(c => {
+          const dt = c.data();
+          const cerrada = !ABIERTAS.includes(dt.estado);
+          return (propaga.ot && !String(dt.ot || '').trim())
+            || (propaga.po && !String(dt.po || '').trim())
+            || (propaga.agujado && cerrada && !String(dt.agujado || '').trim());
+        });
+        // Cada ficha se actualiza solo con lo que le falta: las reglas
+        // rechazan pisar un dato que esa ficha ya traía.
+        for (let i = 0; i < pend.length; i += 20) {
+          const batch = db.batch();
+          pend.slice(i, i + 20).forEach(c => {
+            const dt = c.data(), suyo = {};
+            if (propaga.ot && !String(dt.ot || '').trim()) suyo.ot = propaga.ot;
+            if (propaga.po && !String(dt.po || '').trim()) suyo.po = propaga.po;
+            if (propaga.agujado && !ABIERTAS.includes(dt.estado) && !String(dt.agujado || '').trim()) suyo.agujado = propaga.agujado;
+            if (Object.keys(suyo).length) batch.update(c.ref, suyo);
+          });
+          await batch.commit();
+        }
+        if (pend.length) toast('✅ Datos agregados · ' + pend.length + ' ficha' + (pend.length === 1 ? '' : 's') + ' actualizada' + (pend.length === 1 ? '' : 's'));
+        else toast('✅ Datos agregados a la tarea');
+      } catch (e2) {
+        // El dato principal YA quedó en la tarea: esto es un extra
+        console.error('propagar ot/po a capturas:', e2);
+        toast('Datos guardados, pero las fichas ya creadas conservan la OT vieja', false);
+      }
+    } else {
+      toast('✅ Datos agregados a la tarea');
+    }
+    if (APP.tareaId === devId) await openTarea(devId);
+  } catch (e) {
+    console.error('guardarDatosTarea:', e);
+    toast(e && e.code === 'permission-denied'
+      ? 'Esos datos ya estaban capturados y no se pueden cambiar'
+      : 'Error guardando — revisa tu conexión', false);
+  } finally { guardandoTarea = null; }
+}
+
+let agregandoVar = null; // devId en curso
+
+// Agrega una variante. Se reescribe el array completo (viejas + nueva) porque
+// Firestore no sabe insertar en un array de objetos; las reglas exigen que los
+// códigos viejos sigan TODOS presentes, así que no se puede perder ninguno.
+export async function agregarVariante() {
+  if (!fsOk() || !APP.tareaId) return;
+  if (agregandoVar) { toast('Espera: se está agregando otra variante', false); return; }
+  const cod = normalizarCodigo(gv('tk-vc'));
+  if (!cod) { toast('Escribe el código de la variante', false); return; }
+  if (!codigoValido(cod)) { toast('El código no puede llevar espacios ni símbolos raros', false); return; }
+  const d = APP.tareaDoc || {};
+  const codigos = d.variante_codigos || [];
+  if (codigos.includes(cod)) { toast('Esa variante ya está en la tarea', false); return; }
+  if (codigos.length >= 40) { toast('Una tarea admite máximo 40 variantes', false); return; }
+  // Reabrir no puede ser un efecto lateral silencioso: el muestrista solo ve
+  // las tareas pendientes o en proceso, así que agregar aquí la resucita.
+  if (d.estado === 'terminado') {
+    confirmDlg('La tarea estaba terminada',
+      'Agregar una variante la va a reabrir: volverá a la lista del muestrista y se borrará su fecha de cierre. ¿Continuar?',
+      'Sí, reabrir y agregar', () => escribirVariante(cod));
+    return;
+  }
+  await escribirVariante(cod);
+}
+
+async function escribirVariante(cod) {
+  if (!fsOk() || agregandoVar || !APP.tareaId) return;
+  const devId = APP.tareaId;
+  agregandoVar = devId;
+  const d = APP.tareaDoc || {};
+  const codigos = d.variante_codigos || [];
+  try {
+    const nueva = {
+      codigo: cod,
+      descripcion: gv('tk-vd').trim(),
+      pares_requeridos: gv('tk-vp').trim(),
+      tipo_pack: '',
+    };
+    const batch = db.batch();
+    batch.update(db.collection('desarrollos').doc(devId), {
+      variantes: [...(d.variantes || []), nueva],
+      variante_codigos: [...codigos, cod],
+    });
+    // La complejidad del código nuevo va al espejo privado, nunca al público
+    batch.update(db.collection('desarrollos_privado').doc(devId), {
+      ['complejidad_por_codigo.' + cod]: gv('tk-vx') || 'A',
+    });
+    await batch.commit();
+    // Si la tarea estaba cerrada, se reabre sola: ya hay un código pendiente.
+    await reconciliarEstadoTarea(devId);
+    toast('✅ Variante ' + cod + ' agregada');
+    if (APP.tareaId === devId) await openTarea(devId);
+  } catch (e) {
+    console.error('agregarVariante:', e);
+    toast(e && e.code === 'permission-denied'
+      ? 'Firestore rechazó el cambio — avisa a Roberto'
+      : 'Error agregando la variante — revisa tu conexión', false);
+  } finally { agregandoVar = null; }
+}
+
 export function backRev() { scr('sL'); loadRev(); }
 
 // Delegación de eventos para listas dinámicas de Lety
@@ -741,6 +1056,16 @@ export function wireAdminEvents() {
   document.getElementById('pend-list').addEventListener('click', e => {
     const btn = e.target.closest('[data-rev]');
     if (btn) openRev(btn.dataset.rev, false);
+  });
+  const tkList = document.getElementById('tk-list');
+  if (tkList) tkList.addEventListener('click', e => {
+    const btn = e.target.closest('[data-tarea]');
+    if (btn) openTarea(btn.dataset.tarea);
+  });
+  const tkBody = document.getElementById('tk-body');
+  if (tkBody) tkBody.addEventListener('click', e => {
+    const btn = e.target.closest('[data-ftver]');
+    if (btn) verFichaTecnica(btn.dataset.ftver);
   });
   document.getElementById('db-list').addEventListener('click', e => {
     const btn = e.target.closest('[data-view]');
