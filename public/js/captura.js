@@ -6,6 +6,10 @@ import { timers, getT, elapsedOf, tmOf, tenOf, causesOf, startT, pauseT, seedFro
 import { showFirma } from './firma.js';
 import { openTMFor } from './muestrista.js';
 
+// La ficha técnica define el punto de máquina como una tabla de 10
+// alimentadores (DEN-1 / DEN-2 / SINK2 cada uno), no como un solo trío.
+export const PTO_ALIM = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
 let startBusy = false;
 
 export async function startCap(devId, cod) {
@@ -108,7 +112,9 @@ async function createCap(devId, cod) {
         med_sh: { A: '', B: '', C: '', D: '', E: '' }, med_h: { A: '', B: '', C: '', D: '', E: '' },
         t_ciclo_min: '', t_ciclo_seg: '', peso_sal: '', peso_cer: '',
         giros: { el: '', tb: '', pl: '', rb: '' }, vels: { el: '', tb: '', tp: '', pl: '' },
-        pto: { d1: '', d2: '', sk: '' }, pares: '', obs: '',
+        pto: { d1: '', d2: '', sk: '' },
+        pto_tabla: PTO_ALIM.map(n => ({ alim: String(n), d1: '', d2: '', sk: '' })),
+        pares: '', obs: '',
         firma_m: null, firma_l: null, iter: 1,
       });
       tx.update(devRef, { estado: 'en_proceso' });
@@ -219,12 +225,22 @@ export async function openCap(capturaId) {
           <div class="fg"><label class="fl">Planta</label><input class="fi" type="number" min="0" id="v-pl" value="${es(vl.pl)}" placeholder="260"></div>
         </div>
       </div>
-      <div class="fsec"><div class="ftitle">Punto de máquina</div>
-        <div class="g3">
-          <div class="fg"><label class="fl">DEN-1</label><input class="fi" type="number" min="0" id="p-d1" value="${es(pt.d1)}" placeholder="1"></div>
-          <div class="fg"><label class="fl">DEN-2</label><input class="fi" type="number" min="0" id="p-d2" value="${es(pt.d2)}" placeholder="0"></div>
-          <div class="fg"><label class="fl">SINK2</label><input class="fi" type="number" min="0" id="p-sk" value="${es(pt.sk)}" placeholder="0"></div>
-        </div>
+      <div class="fsec"><div class="ftitle">Punto de máquina — un renglón por alimentador</div>
+        <table class="mt">
+          <tr><th>Alim.</th><th>DEN-1</th><th>DEN-2</th><th>SINK2</th></tr>
+          ${PTO_ALIM.map(n => {
+            // La ficha técnica trae los 10 renglones; el primero conserva
+            // además el trío suelto de las fichas viejas (pto.d1/d2/sk).
+            const f = (d.pto_tabla || [])[n - 1] || (n === 1 ? pt : {});
+            return `<tr>
+              <td class="lbl">${n}</td>
+              <td><input id="pt-${n}-d1" value="${es(f.d1 || '')}" inputmode="numeric" placeholder="—"></td>
+              <td><input id="pt-${n}-d2" value="${es(f.d2 || '')}" inputmode="numeric" placeholder="—"></td>
+              <td><input id="pt-${n}-sk" value="${es(f.sk || '')}" inputmode="numeric" placeholder="—"></td>
+            </tr>`;
+          }).join('')}
+        </table>
+        <div style="font-size:11px;color:var(--tx3);margin-top:6px">DEN-1 es el que normalmente se ajusta. Deja en blanco los alimentadores que no uses.</div>
       </div>
       <div class="fsec"><div class="ftitle">Producción — variante ${es(d.codigo_variante)}</div>
         <div class="g2">
@@ -292,7 +308,7 @@ const NUM_FIELDS = [
   ['f-cm', 'T. ciclo min'], ['f-cs', 'T. ciclo seg'], ['f-ps', 'Peso salida'], ['f-pc', 'Peso cerrado'],
   ['g-el', 'Giros elástico'], ['g-tb', 'Giros tubo'], ['g-pl', 'Giros planta'], ['g-rb', 'Giros rubber'],
   ['v-el', 'Vel. elástico'], ['v-tb', 'Vel. tubo'], ['v-tp', 'Vel. talón y punta'], ['v-pl', 'Vel. planta'],
-  ['p-d1', 'DEN-1'], ['p-d2', 'DEN-2'], ['p-sk', 'SINK2'], ['f-pr', 'Pares producidos'],
+  ['f-pr', 'Pares producidos'],
   ['shA', 'Medida A sin hormar'], ['shB', 'Medida B sin hormar'], ['shC', 'Medida C sin hormar'],
   ['shD', 'Medida D sin hormar'], ['shE', 'Medida E sin hormar'],
   ['mhA', 'Medida A hormada'], ['mhB', 'Medida B hormada'], ['mhC', 'Medida C hormada'],
@@ -301,6 +317,16 @@ const NUM_FIELDS = [
 
 function camposInvalidos() {
   const errores = [];
+  // Los 30 campos del punto de máquina se validan aparte: se generan
+  // dinámicamente, así que no están en la lista fija de arriba.
+  PTO_ALIM.forEach(n => {
+    [['d1', 'DEN-1'], ['d2', 'DEN-2'], ['sk', 'SINK2']].forEach(([k, et]) => {
+      const v = gv('pt-' + n + '-' + k).trim();
+      if (v === '') return;
+      const num = Number(v.replace(',', '.'));
+      if (!Number.isFinite(num) || num < 0) errores.push(et + ' del alimentador ' + n);
+    });
+  });
   NUM_FIELDS.forEach(([id, label]) => {
     const v = gv(id).trim();
     if (v === '') return; // vacío se permite (Lety decide en revisión)
@@ -323,7 +349,13 @@ async function saveCapData() {
     peso_sal: gv('f-ps'), peso_cer: gv('f-pc'),
     giros: { el: gv('g-el'), tb: gv('g-tb'), pl: gv('g-pl'), rb: gv('g-rb') },
     vels: { el: gv('v-el'), tb: gv('v-tb'), tp: gv('v-tp'), pl: gv('v-pl') },
-    pto: { d1: gv('p-d1'), d2: gv('p-d2'), sk: gv('p-sk') },
+    pto_tabla: PTO_ALIM.map(n => ({
+      alim: String(n),
+      d1: gv('pt-' + n + '-d1'), d2: gv('pt-' + n + '-d2'), sk: gv('pt-' + n + '-sk'),
+    })),
+    // El primer alimentador se sigue guardando suelto: el histórico y las
+    // columnas den1/den2/sink2 del reporte se leen de aquí.
+    pto: { d1: gv('pt-1-d1'), d2: gv('pt-1-d2'), sk: gv('pt-1-sk') },
     pares: gv('f-pr'), obs: gv('f-ob'),
     tipo_pack: gv('f-pk'),
     elapsed_seg: elapsedOf(id), tm_seg: tmOf(id), tm_causas: causesOf(id),

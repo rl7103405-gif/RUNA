@@ -594,7 +594,7 @@ export async function openRev(capturaId, readOnly = false, soloVer = false) {
           <div><label class="fl">Peso cerrado</label>${es(d.peso_cer) || '—'} g</div>
         </div>
       </div>
-      <div class="fsec"><div class="ftitle">Giros / Velocidades / Punto máquina</div>
+      <div class="fsec"><div class="ftitle">Giros y velocidades de cadena</div>
         <div class="g2" style="font-size:13px">
           <div><label class="fl">Giros elástico</label>${es(gi.el) || '—'}</div>
           <div><label class="fl">Giros tubo</label>${es(gi.tb) || '—'}</div>
@@ -604,10 +604,19 @@ export async function openRev(capturaId, readOnly = false, soloVer = false) {
           <div><label class="fl">Vel. tubo</label>${es(vl.tb) || '—'}</div>
           <div><label class="fl">Vel. talón y punta</label>${es(vl.tp) || '—'}</div>
           <div><label class="fl">Vel. planta</label>${es(vl.pl) || '—'}</div>
-          <div><label class="fl">DEN-1</label>${es(pt.d1) || '—'}</div>
-          <div><label class="fl">DEN-2 / SINK2</label>${es(pt.d2) || '—'} / ${es(pt.sk) || '—'}</div>
         </div>
       </div>
+      ${(() => {
+        // Punto de máquina: la tabla completa si la ficha la trae; si es una
+        // ficha vieja, el trío suelto que se capturaba antes.
+        const filas = (d.pto_tabla || []).filter(f => f && (f.d1 || f.d2 || f.sk));
+        if (!filas.length && !(pt.d1 || pt.d2 || pt.sk)) return '';
+        const cuerpo = filas.length
+          ? filas.map(f => `<tr><td class="lbl">${es(f.alim)}</td><td>${es(f.d1) || '—'}</td><td>${es(f.d2) || '—'}</td><td>${es(f.sk) || '—'}</td></tr>`).join('')
+          : `<tr><td class="lbl">1</td><td>${es(pt.d1) || '—'}</td><td>${es(pt.d2) || '—'}</td><td>${es(pt.sk) || '—'}</td></tr>`;
+        return `<div class="fsec"><div class="ftitle">Punto de máquina</div>
+          <table class="mt"><tr><th>Alim.</th><th>DEN-1</th><th>DEN-2</th><th>SINK2</th></tr>${cuerpo}</table></div>`;
+      })()}
       <div class="fsec"><div class="ftitle">Producción</div>
         <div style="font-size:13px"><label class="fl">Pares producidos</label>${es(d.pares) || '—'} de ${es(d.pares_requeridos) || '—'} requeridos</div>
       </div>
@@ -854,6 +863,30 @@ export async function openTarea(devId) {
         + '</div>';
     }).join('');
 
+    // ── Tiempo de la tarea completa ──
+    // Lety pidió "el desglose del tiempo que ocuparon al final de la tarea":
+    // hasta ahora solo existía por ficha. Aquí se suman todas las fichas del
+    // pack, incluidas las de una variante recapturada.
+    const bruto = caps.reduce((a, c) => a + (c.elapsed_seg || 0), 0);
+    const tmTot = caps.reduce((a, c) => a + (c.tm_seg || 0), 0);
+    const tenTot = caps.reduce((a, c) => a + tenFromDoc(c), 0);
+    const porCausa = {};
+    caps.forEach(c => Object.entries(c.tm_causas || {}).forEach(([k, v]) => {
+      if (typeof v === 'number' && v > 0) porCausa[k] = (porCausa[k] || 0) + v;
+    }));
+    const causas = Object.entries(porCausa).sort((a, b) => b[1] - a[1]);
+    const tiempos = caps.length === 0 ? '' : `
+      <div class="fsec"><div class="ftitle">Tiempo de la tarea</div>
+        <div class="mr"><span>Trabajo efectivo (TEN)</span><strong style="color:var(--gn)">${fmtMin(tenTot)}</strong></div>
+        <div class="mr"><span>Tiempo muerto</span><span style="color:var(--rd)">${fmtMin(tmTot)}</span></div>
+        <div class="mr"><span>Bruto de punta a punta</span><span>${fmtMin(bruto)}</span></div>
+        <div class="mr"><span style="font-size:11px;color:var(--tx3)">${es(caps.length)} ficha${caps.length === 1 ? '' : 's'} capturada${caps.length === 1 ? '' : 's'}${d.terminado_en ? ' · cerrada ' + fmtDate(d.terminado_en) : ''}</span><span></span></div>
+        ${causas.length ? '<div class="ftitle" style="margin-top:10px">Desglose del tiempo muerto</div>' + causas.map(([k, v]) => {
+          const c = TM_CAUSES.find(x => x.id === k);
+          return `<div class="mr"><span>${es(c ? c.label : k)}${c && c.pen ? ' <span class="bge brd">cuenta en TEN</span>' : ''}</span><span>${fmtMin(v)}</span></div>`;
+        }).join('') : ''}
+      </div>`;
+
     const completar = (faltaOT || faltaPO || faltaAg)
       ? '<div class="fsec"><div class="ftitle">Completar datos que faltaban</div>'
         + '<div class="al ali"><span>ℹ️</span><span style="font-size:12px">Solo se puede llenar lo que está vacío; lo ya capturado no se cambia.</span></div>'
@@ -873,6 +906,7 @@ export async function openTarea(devId) {
       + '<div class="mr"><span>Creada ' + fmtDate(d.fecha_creacion) + '</span><span>' + es(d.estado) + '</span></div>'
       + (d.notas ? '<div class="mr"><span style="font-size:12px">📌 ' + es(d.notas) + '</span></div>' : '')
       + '</div>'
+      + tiempos
       + completar
       + '<div class="stitle">Variantes (' + es((d.variante_codigos || []).length) + ')</div>'
       + variantes
@@ -925,6 +959,14 @@ function pintaFicha(cont, ft, cod) {
     + (med ? '<div class="ftitle" style="margin-top:8px">Medidas (sin hormar / hormado)</div>' + med : '')
     + fila('Giros el/tb/pl/rb', ['el', 'tb', 'pl', 'rb'].map(k => (ft.giros || {})[k] || '—').join(' / '))
     + fila('Vels el/tb/tp/pl', ['el', 'tb', 'tp', 'pl'].map(k => (ft.vels || {})[k] || '—').join(' / '))
+    + ((ft.pto_tabla || []).filter(f => f && (f.d1 || f.d2 || f.sk)).length
+        ? '<div class="ftitle" style="margin-top:8px">Punto de máquina objetivo</div>'
+          + '<table class="mt"><tr><th>Alim.</th><th>DEN-1</th><th>DEN-2</th><th>SINK2</th></tr>'
+          + ft.pto_tabla.filter(f => f && (f.d1 || f.d2 || f.sk))
+              .map(f => '<tr><td class="lbl">' + es(f.alim) + '</td><td>' + (es(f.d1) || '—')
+                + '</td><td>' + (es(f.d2) || '—') + '</td><td>' + (es(f.sk) || '—') + '</td></tr>').join('')
+          + '</table>'
+        : '')
     + ((ft.faltantes_al_importar || []).length
         ? '<div class="mr"><span style="font-size:11px;color:var(--tx3)">Llegó sin: ' + es(ft.faltantes_al_importar.join(', ')) + '</span></div>' : '')
     + '</div>';

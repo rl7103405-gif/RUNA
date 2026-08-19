@@ -55,6 +55,17 @@ export const EXPORT_COLUMNS = [
   { header: 'den1',               type: 'txt',  w: 9,  get: d => t((d.pto || {}).d1) },
   { header: 'den2',               type: 'txt',  w: 9,  get: d => t((d.pto || {}).d2) },
   { header: 'sink2',              type: 'txt',  w: 9,  get: d => t((d.pto || {}).sk) },
+  // El punto de máquina son 10 alimentadores. Las tres columnas de arriba
+  // conservan el primero (y las fichas viejas, que solo tenían ese trío);
+  // estas traen cada renglón como "DEN-1/DEN-2/SINK2".
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => ({
+    header: 'pto_alim_' + n, type: 'txt', w: 12,
+    get: d => {
+      const f = (d.pto_tabla || [])[n - 1];
+      if (!f || (!f.d1 && !f.d2 && !f.sk)) return '';
+      return [f.d1 || '', f.d2 || '', f.sk || ''].join('/').replace(/\/+$/, '');
+    },
+  })),
   ...TM_CAUSES.map(c => ({ header: 'tm_' + c.id + '_min', type: 'num', w: 14, get: d => min((d.tm_causas || {})[c.id]) })),
   { header: 'observaciones',      type: 'txt',  w: 34, get: d => t(d.obs) },
 ];
