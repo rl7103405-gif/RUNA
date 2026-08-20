@@ -290,13 +290,19 @@ export async function cerrarPausasDe(capturaId) {
   try {
     const snap = await db.collection('capturas').doc(capturaId).collection('pausas')
       .where('estado', 'in', ['pendiente', 'aprobada']).get();
-    await Promise.all(snap.docs.map(d => d.ref.update({
+    // Si alguna no cierra, se avisa: una pausa viva sobre una ficha firmada
+    // reaparecería en la cola de Lety y podría revivir su TM al reabrir. Se
+    // reintenta al reabrir por corrección (captura.js), pero el operador debe
+    // enterarse en vez de que el fallo se pierda en la consola.
+    const r = await Promise.all(snap.docs.map(d => d.ref.update({
       estado: d.data().estado === 'aprobada' ? 'finalizada' : 'cancelada',
       fin_tm: firebase.firestore.FieldValue.serverTimestamp(),
-    }).catch(e => console.error('cerrar pausa:', e))));
+    }).then(() => true).catch(e => { console.error('cerrar pausa:', e); return false; })));
+    if (r.some(ok => !ok)) toast('Quedó una pausa sin cerrar — avísale a Lety', false);
     delete (APP.pausas || {})[capturaId];
   } catch (e) {
     console.error('cerrarPausasDe:', e);
+    toast('No se pudieron cerrar las pausas de esta ficha — avísale a Lety', false);
   }
 }
 

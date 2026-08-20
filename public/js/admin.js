@@ -102,17 +102,31 @@ export function initLety() {
     .where('estado', '==', 'pendiente')
     .onSnapshot(snap => {
       if (!APP.user || APP.user.rol !== 'lety') return;
-      APP.pausasPend = snap.docs.map(d => ({ id: d.id, ref: d.ref, data: d.data() }));
+      // El id del padre identifica la ficha: en un collectionGroup los
+      // documentos llegan de capturas distintas y Lety necesita saber de cuál
+      // es cada solicitud (un muestrista puede tener varias fichas abiertas).
+      APP.pausasPend = snap.docs.map(d => ({
+        id: d.id, ref: d.ref, data: d.data(),
+        capId: d.ref.parent.parent ? d.ref.parent.parent.id : null,
+      }));
+      etiquetarPausas();
       renderPausas();
     }, e => {
       console.error('pausas pendientes:', e);
-      // Sin índice de collectionGroup, Firestore rechaza la consulta: se avisa
-      // para que no parezca que nadie ha pedido pausa.
+      // Se distingue la causa: 'failed-precondition' es índice faltante y
+      // 'permission-denied' son las reglas. Sin esto el aviso de pantalla es el
+      // mismo para las dos y no hay forma de saber cuál fue sin abrir la
+      // consola — que es justo lo que pasó el 2026-08-20.
+      const causa = e.code === 'permission-denied'
+        ? 'las reglas no permiten la consulta'
+        : e.code === 'failed-precondition'
+          ? 'falta el índice en Firestore'
+          : (e.code || 'error desconocido');
       const w = document.getElementById('pausas-wrap');
       const l = document.getElementById('pausas-list');
       if (w && l) {
         w.style.display = '';
-        l.innerHTML = '<div class="al alr"><span>⚠️</span><span style="font-size:12px">No se pudieron cargar las pausas pedidas — avisa a Roberto</span></div>';
+        l.innerHTML = '<div class="al alr"><span>⚠️</span><span style="font-size:12px">No se pudieron cargar las pausas pedidas — avísale a Roberto: <b>' + es(causa) + '</b></span></div>';
       }
     }));
   const unsubCat = watchCatalogo();
@@ -123,6 +137,25 @@ export function initLety() {
 // ── Pausas: el muestrista pide, Lety decide ──
 // Mientras ella no autorice, el cronómetro del muestrista sigue corriendo
 // (decisión del dueño), así que estas solicitudes son urgentes.
+// Cruza cada solicitud con su ficha para que la tarjeta diga de CUÁL es.
+// Se cachea por captura: las fichas abiertas son pocas y no cambian de folio.
+const cacheFichas = {};
+async function etiquetarPausas() {
+  const pend = APP.pausasPend || [];
+  const faltan = [...new Set(pend.map(p => p.capId).filter(id => id && !cacheFichas[id]))];
+  if (!faltan.length) return;
+  await Promise.all(faltan.map(async id => {
+    try {
+      const s = await db.collection('capturas').doc(id).get();
+      if (s.exists) {
+        const d = s.data();
+        cacheFichas[id] = [d.folio, d.codigo].filter(Boolean).join(' · ');
+      }
+    } catch (e) { console.error('ficha de la pausa:', e); }
+  }));
+  renderPausas();
+}
+
 function renderPausas() {
   const wrap = document.getElementById('pausas-wrap');
   const lista = document.getElementById('pausas-list');
@@ -131,11 +164,12 @@ function renderPausas() {
   wrap.style.display = pend.length ? '' : 'none';
   setBadgePendientes(document.querySelectorAll('#pend-list .card').length, pend.length);
   if (!pend.length) { lista.innerHTML = ''; return; }
-  lista.innerHTML = pend.map(({ id, data: p }) => {
+  lista.innerHTML = pend.map(({ id, data: p, capId }) => {
     const c = TM_CAUSES.find(x => x.id === p.causa);
     const quien = (USERS[p.solicitada_por] || {}).nombre || p.solicitada_por;
+    const ficha = capId ? cacheFichas[capId] : '';
     return `<div class="card am">
-      <div class="dt">${es(quien)} pide pausa</div>
+      <div class="dt">${es(quien)} pide pausa${ficha ? ' — <span style="font-family:var(--mono);font-size:13px">' + es(ficha) + '</span>' : ''}</div>
       <div class="ds">${es(c ? c.label : p.causa)}${c && !c.ext ? ' · <span class="bge bpend">interna</span>' : ''}</div>
       <div class="mr"><span style="font-size:11px;color:var(--tx3)">Pedida ${fmtDate(p.solicitada_en)} · el tiempo sigue corriendo</span><span></span></div>
       <div class="brow" style="margin-top:8px">

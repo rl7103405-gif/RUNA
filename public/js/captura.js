@@ -99,7 +99,10 @@ async function createCap(devId, cod) {
       const cSnap = await tx.get(counterRef);
       const prev = cSnap.exists && typeof cSnap.data().seq === 'number' ? Math.floor(cSnap.data().seq) : 0;
       const seq = prev + 1;
-      tx.set(counterRef, { seq });
+      // last_cap_id ata el contador a ESTA captura: la regla exige que el
+      // contador apunte al mismo doc que se esta creando, asi un solo batch no
+      // puede crear DOS capturas con el mismo folio_seq (pentest 2026-08-20).
+      tx.set(counterRef, { seq, last_cap_id: capRef.id });
       tx.set(capRef, {
         folio: 'FP-' + String(seq).padStart(5, '0'), folio_seq: seq,
         id_desarrollo: devId, id_muestrista: APP.user.id,
@@ -136,6 +139,14 @@ export async function reopenCorreccion(capId) {
       const s = await db.collection('capturas').doc(capId).get();
       if (s.exists) seedFromDoc(capId, s.data());
     }
+    // Segunda oportunidad de cerrar pausas colgadas: al firmar ya se intenta,
+    // pero si aquella escritura falló (red, o carrera con Lety autorizando),
+    // una pausa 'aprobada' seguiría viva y al reabrir arrancaría el TM con su
+    // `inicio_tm` original — inflando el tiempo muerto sin que nadie la pidiera.
+    try {
+      const { cerrarPausasDe } = await import('./muestrista.js');
+      await cerrarPausasDe(capId);
+    } catch (e) { console.error('cerrar pausas al reabrir:', e); }
     await db.collection('capturas').doc(capId).update({
       estado: 'activo',
       dt_fin: null, // se re-firmará; evita que la ficha reabierta cuente en historiales
