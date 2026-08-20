@@ -130,8 +130,15 @@ async function createCap(devId, cod) {
 }
 
 // Reabre una ficha devuelta por Lety: vuelve a 'activo' e incrementa iteración
+// Un doble toque lanzaba dos reaperturas y la ficha saltaba dos iteraciones
+// (las reglas solo exigen que `iter` no retroceda, no que suba de uno en uno).
+// El cierre remoto de pausas de abajo alarga la ventana, así que el candado
+// deja de ser opcional.
+let reabriendo = false;
+
 export async function reopenCorreccion(capId) {
-  if (!fsOk()) return;
+  if (!fsOk() || reabriendo) return;
+  reabriendo = true;
   try {
     // Si el listener de capturas aún no sembró el timer, sembrarlo desde el
     // doc para no arrancar en cero y pisar los tiempos reales en el próximo sync
@@ -155,7 +162,9 @@ export async function reopenCorreccion(capId) {
     getT(capId);
     startT(capId);
     await openCap(capId);
-  } catch (e) { console.error(e); toast('Error reabriendo ficha', false); }
+  } catch (e) {
+    console.error(e); toast('Error reabriendo ficha', false);
+  } finally { reabriendo = false; }
 }
 
 export async function openCap(capturaId) {

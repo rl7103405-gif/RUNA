@@ -298,11 +298,14 @@ export async function cerrarPausasDe(capturaId) {
       estado: d.data().estado === 'aprobada' ? 'finalizada' : 'cancelada',
       fin_tm: firebase.firestore.FieldValue.serverTimestamp(),
     }).then(() => true).catch(e => { console.error('cerrar pausa:', e); return false; })));
-    if (r.some(ok => !ok)) toast('Quedó una pausa sin cerrar — avísale a Lety', false);
+    // El texto dice explícitamente que la ficha SÍ quedó: este aviso sale
+    // justo cuando se firma, encima de la pantalla de éxito, y un rojo suelto
+    // ahí se lee como si la firma hubiera fallado.
+    if (r.some(ok => !ok)) toast('La ficha quedó bien, pero una pausa no se cerró — avísale a Lety', false);
     delete (APP.pausas || {})[capturaId];
   } catch (e) {
     console.error('cerrarPausasDe:', e);
-    toast('No se pudieron cerrar las pausas de esta ficha — avísale a Lety', false);
+    toast('La ficha quedó bien, pero sus pausas no se cerraron — avísale a Lety', false);
   }
 }
 
@@ -331,8 +334,15 @@ export function watchPausas(capIds) {
         APP.pausas[capId] = { id: viva.id, ...dt };
         if (dt.estado === 'aprobada') {
           const t = timers[capId];
-          if (t && !t.tmActive) {
-            const ms = dt.inicio_tm && dt.inicio_tm.toMillis ? dt.inicio_tm.toMillis() : Date.now();
+          // Tope de cordura: si una pausa quedó colgada (el cierre al firmar
+          // falló por red) y la ficha se reabre días después por corrección,
+          // arrancaría un tiempo muerto que nadie pidió. Se cierra en dos
+          // puntos — al firmar y al reabrir —, pero si ambos fallaron, una
+          // autorización de hace medio día ya no puede revivir sola.
+          const ms = dt.inicio_tm && dt.inicio_tm.toMillis ? dt.inicio_tm.toMillis() : Date.now();
+          const rancia = Date.now() - ms > 12 * 60 * 60 * 1000;
+          if (rancia) console.warn('pausa aprobada demasiado vieja, no se reactiva:', viva.id);
+          if (t && !t.tmActive && !rancia) {
             startTMDesde(capId, dt.causa, ms);
             const c = TM_CAUSES.find(x => x.id === dt.causa);
             toast('✅ Lety autorizó tu pausa: ' + (c ? c.label : dt.causa));

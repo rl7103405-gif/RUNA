@@ -140,18 +140,28 @@ export function initLety() {
 // Cruza cada solicitud con su ficha para que la tarjeta diga de CUÁL es.
 // Se cachea por captura: las fichas abiertas son pocas y no cambian de folio.
 const cacheFichas = {};
+const fichasEnVuelo = {};
 async function etiquetarPausas() {
   const pend = APP.pausasPend || [];
-  const faltan = [...new Set(pend.map(p => p.capId).filter(id => id && !cacheFichas[id]))];
+  // Se descartan las que ya están cacheadas Y las que tienen un get() en
+  // curso: el listener puede disparar en ráfaga y, mientras la primera lectura
+  // no vuelve, la caché sigue vacía y se pediría el mismo documento otra vez.
+  const faltan = [...new Set(pend.map(p => p.capId)
+    .filter(id => id && !cacheFichas[id] && !fichasEnVuelo[id]))];
   if (!faltan.length) return;
   await Promise.all(faltan.map(async id => {
+    fichasEnVuelo[id] = true;
     try {
       const s = await db.collection('capturas').doc(id).get();
+      // El campo es `codigo_variante` (captura.js:109), no `codigo`: con el
+      // nombre equivocado la tarjeta mostraba solo el folio.
       if (s.exists) {
         const d = s.data();
-        cacheFichas[id] = [d.folio, d.codigo].filter(Boolean).join(' · ');
+        cacheFichas[id] = [d.folio, d.codigo_variante].filter(Boolean).join(' · ');
       }
-    } catch (e) { console.error('ficha de la pausa:', e); }
+    } catch (e) {
+      console.error('ficha de la pausa:', e);
+    } finally { delete fichasEnVuelo[id]; }
   }));
   renderPausas();
 }
