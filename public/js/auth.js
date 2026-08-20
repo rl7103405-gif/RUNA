@@ -5,7 +5,7 @@ import { APP, USERS, EMPLEADO_EMAIL } from './state.js';
 import { scr, toast, gv, openOvl, closeOvl } from './utils.js';
 import { clearAllTimers } from './timers.js';
 import { initMuestrista } from './muestrista.js';
-import { initLety, setBadgePendientes } from './admin.js';
+import { initLety, setBadgePendientes, invalidarLookups } from './admin.js';
 
 export function selectUser(uid) {
   APP.pinTarget = uid;
@@ -146,6 +146,9 @@ export function logout() {
   APP.pausasPend = [];
   APP.user = null;
   APP.vars = [];
+  APP.vp0 = ''; APP.vp0Cod = ''; APP.cqExcl = false;
+  APP.activeCapDoc = null;
+  invalidarLookups(); // un autollenado en vuelo no debe rellenar el formulario de la siguiente sesión
   APP.activasSnap = [];
   APP.allCaps = [];
   APP.tareasSnap = [];

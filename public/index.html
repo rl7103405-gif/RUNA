@@ -152,7 +152,7 @@
           <div class="fg"><label class="fl">OT</label><input class="fi" id="l-ot" placeholder="7735"></div>
           <div class="fg"><label class="fl">PO</label><input class="fi" id="l-po" placeholder="2422"></div>
         </div>
-        <div class="fg"><label class="fl">Código Quini</label><input class="fi" id="l-cq" placeholder="2803"></div>
+        <div class="fg"><label class="fl" id="l-cq-lbl">Código Quini</label><input class="fi" id="l-cq" placeholder="2803"></div>
         <div class="fg"><label class="fl">Modelo</label><input class="fi" id="l-mod" placeholder="RBMCP101"></div>
         <div class="fg"><label class="fl">Cliente</label><input class="fi" id="l-cli" placeholder="Martí / Reebok"></div>
         <div class="g2">
@@ -162,6 +162,7 @@
           <div class="fg"><label class="fl">Talla</label><input class="fi" id="l-tal" placeholder="Unitalla"></div>
         </div>
         <div class="fg"><label class="fl">Tipo de producto</label><input class="fi" id="l-tprod" placeholder="6 Pack Mid Crew Básico Liso"></div>
+        <div class="fg"><label class="fl">Tipo de pack</label><input class="fi" id="l-pack" placeholder="6 Pack / Individual"></div>
         <div class="fg"><label class="fl">Agujado (número de agujas)</label>
           <select class="fi" id="l-ag"><option value="">— elegir —</option><option>108</option><option>120</option><option>132</option><option>144</option><option>200</option></select>
         </div>
@@ -184,12 +185,9 @@
         <div class="ftitle">Datos del código</div>
         <div class="g2">
           <div class="fg"><label class="fl">Código variante</label><input class="fi" id="s-cod" placeholder="2798"></div>
-          <div class="fg"><label class="fl">Descripción / color</label><input class="fi" id="s-desc" placeholder="Negro"></div>
-        </div>
-        <div class="g2">
           <div class="fg"><label class="fl">Pares requeridos</label><input class="fi" type="number" id="s-pares" placeholder="6000"></div>
-          <div class="fg"><label class="fl">Tipo de pack</label><input class="fi" id="s-pack" placeholder="Individual"></div>
         </div>
+        <div class="fg"><label class="fl">Color / descripción (opcional)</label><input class="fi" id="s-desc" placeholder="Negro"></div>
       </div>
       <!-- PACK MODE -->
       <div id="form-pack" class="fsec" style="display:none">
@@ -197,16 +195,13 @@
         <div id="vlist"></div>
         <div style="background:var(--bg);border-radius:var(--r);padding:10px;border:1px dashed var(--b2);margin-bottom:8px">
           <div class="g2" style="margin-bottom:8px">
-            <div class="fg" style="margin:0"><label class="fl">Código variante</label><input class="fi" id="vc" placeholder="2798"></div>
-            <div class="fg" style="margin:0"><label class="fl">Descripción</label><input class="fi" id="vd" placeholder="Negro"></div>
+            <div class="fg" style="margin:0"><label class="fl">Código variante</label><input class="fi" id="vc" placeholder="1602"></div>
+            <div class="fg" style="margin:0"><label class="fl">Pares requeridos</label><input class="fi" type="number" id="vp" placeholder="4"></div>
           </div>
-          <div class="g2">
-            <div class="fg" style="margin:0"><label class="fl">Pares requeridos</label><input class="fi" type="number" id="vp" placeholder="6000"></div>
-            <div class="fg" style="margin:0"><label class="fl">Tipo de pack</label><input class="fi" id="vpk" placeholder="6 Pack"></div>
-          </div>
-          <div style="margin-top:8px">
+          <div class="fg" style="margin:0 0 8px"><label class="fl">Color / descripción (opcional)</label><input class="fi" id="vd" placeholder="Negro"></div>
+          <div>
             <div class="fg" style="margin:0">
-              <label class="fl">Complejidad de este código (solo visible para ti)</label>
+              <label class="fl">Complejidad de este código (se toma la de arriba si no la cambias)</label>
               <select class="fi" id="vcx">
                 <option value="A">A — Tin básico / liso · 1.0 pts</option>
                 <option value="B">B — Con diseño · 2.0 pts</option>
@@ -276,6 +271,7 @@
           <option value="abiertas">En curso</option>
           <option value="todas">Todas</option>
           <option value="terminado">Terminadas</option>
+          <option value="cancelada">Canceladas</option>
         </select>
         <select class="fi" id="tk-quien" onchange="loadTareas()">
           <option value="all">Los dos</option>
@@ -392,6 +388,17 @@
       <div class="ef" id="ex-folio"></div>
       <button class="btn btn-am" id="ex-ok" onclick="closeOvl('oex')">Listo</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: CANCELAR TAREA (solo Lety) — el motivo es obligatorio -->
+<div class="ovl" id="ocan" role="dialog" aria-modal="true">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:6px">🗑 Cancelar tarea</div>
+    <div class="al alw" style="margin-bottom:12px"><span>⚠️</span><span style="font-size:12px">La tarea desaparece de la lista del muestrista y sus fichas abiertas se cierran. El tiempo ya trabajado se conserva pero sale de los indicadores. <strong>No se puede deshacer.</strong></span></div>
+    <div class="fg"><label class="fl">Motivo (obligatorio)</label><textarea class="fi" id="can-motivo" rows="3" maxlength="300" placeholder="Tarea duplicada, el cliente canceló, se asignó por error…"></textarea></div>
+    <button class="btn btn-rd" id="can-ok" onclick="confirmarCancelarTarea()">🗑 Sí, cancelar la tarea</button>
+    <button class="btn btn-gh" onclick="closeOvl('ocan')">Volver</button>
   </div>
 </div>
 

@@ -134,6 +134,42 @@ service cloud.firestore {
             && request.resource.data.complejidad_por_codigo.keys().hasOnly(
                  getAfter(/databases/$(database)/documents/desarrollos/$(devId)).data.variante_codigos));
     }
+    // Último elemento del registro de cambios de la tarea (ver la rama de
+    // ajuste de pares en /desarrollos). Se usa para ATAR el registro al
+    // cambio real: sin esto, un registro append-only "de adorno" dejaría
+    // cambiar varios pares con una sola entrada, o registrar otro código.
+    function ultimoCambio() {
+      return request.resource.data.cambios[request.resource.data.cambios.size() - 1];
+    }
+    function paresAntes() {
+      return resource.data.get('pares_por_codigo', {});
+    }
+    // El desarrollo de una captura (en create, el que declara; en update, el
+    // que ya tiene). Se lee una vez por regla.
+    function devDeCaptura(id) {
+      return get(/databases/$(database)/documents/desarrollos/$(id)).data;
+    }
+    // Campos que una captura puede traer al nacer / que se pueden tocar por
+    // la rama principal del update. Lista blanca: lo que no está aquí no
+    // entra, ni como campo inventado ni como "auditoría" falsa.
+    function camposCaptura() {
+      return ['folio', 'folio_seq', 'id_desarrollo', 'id_muestrista', 'codigo_variante',
+              'descripcion_variante', 'pares_requeridos', 'tipo_pack', 'modelo', 'cliente',
+              'ot', 'po', 'tipo_producto', 'estado', 'elapsed_seg', 'tm_seg', 'tm_causas',
+              'dt_inicio', 'dt_fin', 'iter', 'firma_m', 'firma_l',
+              'maquina_marca', 'maquina_numero', 'agujado', 'med_sh', 'med_h',
+              't_ciclo_min', 't_ciclo_seg', 'peso_sal', 'peso_cer', 'giros', 'vels',
+              'pto', 'pto_tabla', 'pares', 'obs', 'guardado_en', 'guardado_rev'];
+    }
+    // Lo que la rama principal del update puede cambiar: la ficha práctica,
+    // los tiempos, las firmas y las transiciones de estado. Nunca los datos
+    // del pedido ni la identidad (esos se congelan aparte).
+    function camposEditablesCaptura() {
+      return ['estado', 'firma_m', 'firma_l', 'elapsed_seg', 'tm_seg', 'tm_causas',
+              'dt_fin', 'iter', 'maquina_marca', 'maquina_numero', 'agujado',
+              'med_sh', 'med_h', 't_ciclo_min', 't_ciclo_seg', 'peso_sal', 'peso_cer',
+              'giros', 'vels', 'pto', 'pto_tabla', 'pares', 'obs', 'guardado_en', 'guardado_rev'];
+    }
     // Tiempos coherentes: números no negativos, TM nunca mayor que el bruto
     function tiemposOk(data) {
       return data.elapsed_seg is number && data.tm_seg is number
@@ -175,6 +211,19 @@ service cloud.firestore {
                     && request.resource.data.variantes.size() > 0
                     && request.resource.data.variante_codigos is list
                     && request.resource.data.variante_codigos.size() > 0
+                    // Mismas garantías que al ampliar (antes solo existían
+                    // ahí): tope, listas parejas y códigos sin repetir.
+                    && request.resource.data.variante_codigos.size() <= 40
+                    && request.resource.data.variantes.size() == request.resource.data.variante_codigos.size()
+                    && request.resource.data.variante_codigos.toSet().size()
+                         == request.resource.data.variante_codigos.size()
+                    // Mapa canónico de pares por código, OBLIGATORIO y COMPLETO
+                    // desde 2026-08-20: una llave por variante, ni más ni
+                    // menos. Las tareas anteriores no lo tienen (y las reglas
+                    // de capturas lo toleran), pero ninguna nueva nace sin él.
+                    && request.resource.data.pares_por_codigo is map
+                    && request.resource.data.pares_por_codigo.keys().hasOnly(request.resource.data.variante_codigos)
+                    && request.resource.data.pares_por_codigo.keys().hasAll(request.resource.data.variante_codigos)
                     && request.resource.data.creado_por == miEmpleadoId();
       // Máquina de estados del desarrollo (la "tarea"):
       //
@@ -244,6 +293,7 @@ service cloud.firestore {
         || (esAdmin()
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['ot', 'po', 'codigo_quini', 'notas', 'agujado', 'tipo_producto', 'talla', 'genero'])
+            && resource.data.estado != 'cancelada'
             && completaTexto('ot', 40) && completaTexto('po', 40)
             && completaTexto('codigo_quini', 60) && completaTexto('agujado', 10)
             && completaTexto('tipo_producto', 120) && completaTexto('talla', 40)
@@ -251,7 +301,15 @@ service cloud.firestore {
         // ── Lety AGREGA variantes (rama sin datos del pedido).
         || (esAdmin()
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['variantes', 'variante_codigos'])
+                 .hasOnly(['variantes', 'variante_codigos', 'pares_por_codigo'])
+            && resource.data.estado != 'cancelada'
+            // El mapa de pares solo GANA llaves (las de las variantes nuevas):
+            // ninguna se quita ni cambia de valor por esta rama.
+            && (!('pares_por_codigo' in request.resource.data)
+                || (request.resource.data.pares_por_codigo is map
+                    && request.resource.data.pares_por_codigo.keys().hasOnly(request.resource.data.variante_codigos)
+                    && request.resource.data.pares_por_codigo.diff(paresAntes()).removedKeys().size() == 0
+                    && request.resource.data.pares_por_codigo.diff(paresAntes()).changedKeys().size() == 0))
             && request.resource.data.variantes is list
             && request.resource.data.variante_codigos is list
             && request.resource.data.variante_codigos.size() > resource.data.variante_codigos.size()
@@ -268,7 +326,68 @@ service cloud.firestore {
             // Sin códigos repetidos: son la identidad de cada ficha
             && request.resource.data.variante_codigos.toSet().size()
                  == request.resource.data.variante_codigos.size()
-            && request.resource.data.variantes.size() == request.resource.data.variante_codigos.size());
+            && request.resource.data.variantes.size() == request.resource.data.variante_codigos.size())
+        // ── Lety CANCELA la tarea (2026-08-20). Caso real: una tarea duplicada
+        // que el muestrista empezó a trabajar por error. Es un borrado LÓGICO:
+        // el documento se queda, con motivo, autor y hora del servidor, y el
+        // tiempo ya trabajado se conserva en sus capturas (que salen de los
+        // KPIs porque también se cancelan, ver /capturas). No hay vuelta atrás:
+        // una tarea cancelada no entra a ninguna rama de transición de arriba
+        // (todas exigen origen pendiente/en_proceso/terminado). Una tarea
+        // TERMINADA no se cancela: invalidar trabajo aprobado sería otro
+        // concepto (anular), con otras reglas.
+        || (esAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['estado', 'cancelada_motivo', 'cancelada_por', 'cancelada_en'])
+            && resource.data.estado in ['pendiente', 'en_proceso']
+            && request.resource.data.estado == 'cancelada'
+            && request.resource.data.cancelada_motivo is string
+            && request.resource.data.cancelada_motivo.trim().size() >= 5
+            && request.resource.data.cancelada_motivo.size() <= 300
+            && request.resource.data.cancelada_por == miEmpleadoId()
+            && request.resource.data.cancelada_en == request.time)
+        // ── Lety AJUSTA los pares requeridos de UN código (2026-08-20). El
+        // cliente pidió 4 y a media marcha pide 2: el muestrista debe verlo en
+        // la app aunque Lety se lo diga en persona. `variantes` es append-only
+        // estricto y las reglas no inspeccionan elementos de listas, así que
+        // el ajuste vive en un mapa aparte (`pares_por_codigo`) que manda
+        // sobre la variante, y cada ajuste se anota en `cambios`.
+        // El registro va ATADO al cambio: exactamente una llave del mapa se
+        // agrega o cambia, ninguna se quita, y el último elemento de `cambios`
+        // nombra esa misma llave, su valor nuevo y a quien lo hizo. `en`
+        // dentro del cambio es hora del cliente (serverTimestamp no entra en
+        // arrays); el sello de servidor va arriba, en `ultimo_cambio_en`.
+        || (esAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['pares_por_codigo', 'cambios', 'ultimo_cambio_en'])
+            && resource.data.estado in ['pendiente', 'en_proceso']
+            && request.resource.data.pares_por_codigo is map
+            && request.resource.data.pares_por_codigo.keys().size() <= 40
+            && request.resource.data.pares_por_codigo.keys().hasOnly(resource.data.variante_codigos)
+            && request.resource.data.pares_por_codigo.diff(paresAntes()).removedKeys().size() == 0
+            && (request.resource.data.pares_por_codigo.diff(paresAntes()).addedKeys().size()
+                + request.resource.data.pares_por_codigo.diff(paresAntes()).changedKeys().size()) == 1
+            && request.resource.data.cambios is list
+            && request.resource.data.cambios.size() >= 1
+            && request.resource.data.cambios.size() <= 500
+            && request.resource.data.cambios.size() == resource.data.get('cambios', []).size() + 1
+            && request.resource.data.cambios[0:resource.data.get('cambios', []).size()]
+                 == resource.data.get('cambios', [])
+            && ultimoCambio() is map
+            && ultimoCambio().keys().hasOnly(['campo', 'codigo', 'de', 'a', 'por', 'en'])
+            && ultimoCambio().campo == 'pares'
+            && ultimoCambio().por == miEmpleadoId()
+            && ultimoCambio().en is number
+            && ultimoCambio().codigo is string
+            && ultimoCambio().codigo in request.resource.data.pares_por_codigo.diff(paresAntes()).affectedKeys()
+            && request.resource.data.pares_por_codigo[ultimoCambio().codigo] is string
+            && request.resource.data.pares_por_codigo[ultimoCambio().codigo].matches('^[0-9]{1,10}$')
+            && ultimoCambio().a == request.resource.data.pares_por_codigo[ultimoCambio().codigo]
+            // El "antes" también va atado cuando el mapa ya conocía el código
+            // (tareas viejas sin mapa: el cliente pone lo que traía la variante)
+            && (!(ultimoCambio().codigo in paresAntes())
+                || ultimoCambio().de == paresAntes()[ultimoCambio().codigo])
+            && request.resource.data.ultimo_cambio_en == request.time);
       allow delete: if false;
     }
 
@@ -362,6 +481,30 @@ service cloud.firestore {
                     && request.resource.data.id_desarrollo is string
                     && request.resource.data.codigo_variante is string
                     && request.resource.data.estado == 'activo'
+                    // Forma fija: ningún campo inventado, y nace en cero.
+                    && request.resource.data.keys().hasOnly(camposCaptura())
+                    && request.resource.data.elapsed_seg == 0
+                    && request.resource.data.tm_seg == 0
+                    && request.resource.data.get('iter', 1) == 1
+                    && request.resource.data.dt_inicio == request.time
+                    && request.resource.data.get('dt_fin', null) == null
+                    // Los datos del pedido se COPIAN de la tarea, no se
+                    // declaran: antes un muestrista podía nacer su ficha con
+                    // pares_requeridos:"1" o con otro modelo, y después esos
+                    // campos quedaban "congelados"... ya falsos.
+                    && request.resource.data.get('modelo', '') == devDeCaptura(request.resource.data.id_desarrollo).get('modelo', '')
+                    && request.resource.data.get('cliente', '') == devDeCaptura(request.resource.data.id_desarrollo).get('cliente', '')
+                    && request.resource.data.get('ot', '') == devDeCaptura(request.resource.data.id_desarrollo).get('ot', '')
+                    && request.resource.data.get('po', '') == devDeCaptura(request.resource.data.id_desarrollo).get('po', '')
+                    && request.resource.data.get('tipo_producto', '') == devDeCaptura(request.resource.data.id_desarrollo).get('tipo_producto', '')
+                    // Tipo de pack: el del pedido si lo tiene; si no (tareas
+                    // viejas), el de la variante, que no se puede inspeccionar
+                    && (devDeCaptura(request.resource.data.id_desarrollo).get('tipo_pack', '') == ''
+                        || request.resource.data.get('tipo_pack', '') == devDeCaptura(request.resource.data.id_desarrollo).tipo_pack)
+                    // Pares requeridos: los vigentes del mapa canónico cuando
+                    // la tarea conoce el código; si no, los de la variante
+                    && (!(request.resource.data.codigo_variante in devDeCaptura(request.resource.data.id_desarrollo).get('pares_por_codigo', {}))
+                        || request.resource.data.get('pares_requeridos', '') == devDeCaptura(request.resource.data.id_desarrollo).pares_por_codigo[request.resource.data.codigo_variante])
                     && tiemposOk(request.resource.data)
                     && firmaOk(request.resource.data, 'firma_m')
                     && firmaOk(request.resource.data, 'firma_l')
@@ -399,11 +542,15 @@ service cloud.firestore {
                     // realmente a ese desarrollo (evita fichas fraudulentas)
                     && get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.asignado_a == miEmpleadoId()
                     && request.resource.data.codigo_variante in get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.variante_codigos
-                    // No se abren fichas de una tarea ya cerrada: si Lety la
-                    // dio por terminada, primero tiene que reabrirla. Si no,
-                    // una captura nueva quedaría colgando de una tarea muerta.
-                    && get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.get('estado', '') != 'terminado';
+                    // Solo sobre tareas VIVAS (lista blanca): ni terminadas —
+                    // si Lety la dio por terminada, primero la reabre — ni
+                    // canceladas. Si no, la ficha nueva quedaría colgando de
+                    // una tarea muerta.
+                    && get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.get('estado', '') in ['pendiente', 'en_proceso'];
       allow update: if estadoCapturaValido(request.resource.data.estado)
+                    // Lista blanca de lo que esta rama puede tocar: la ficha
+                    // práctica, tiempos, firmas y estado. Nada inventado.
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposEditablesCaptura())
                     // El dueño, el desarrollo de origen y la variante no se reasignan
                     && request.resource.data.id_muestrista == resource.data.id_muestrista
                     && request.resource.data.id_desarrollo == resource.data.id_desarrollo
@@ -454,6 +601,46 @@ service cloud.firestore {
                     // cliente lo incrementa en corrección→activo).
                     && request.resource.data.get('dt_inicio', null) == resource.data.get('dt_inicio', null)
                     && request.resource.data.get('iter', 1) >= resource.data.get('iter', 1)
+                    && request.resource.data.get('iter', 1) <= resource.data.get('iter', 1) + 1
+                    // El tiempo bruto no puede superar el reloj de pared desde
+                    // que nació la ficha (+2 min de holgura por desfase): los
+                    // KPIs los alimenta el propio evaluado y antes bastaba con
+                    // que los números fueran no negativos.
+                    && (resource.data.get('dt_inicio', null) == null
+                        || request.resource.data.elapsed_seg
+                             <= (request.time.toMillis() - resource.data.dt_inicio.toMillis()) / 1000 + 120)
+                    // dt_fin lo pone el servidor (firma) o se limpia (reabrir);
+                    // nadie elige a mano en qué periodo cae su ficha.
+                    && (request.resource.data.get('dt_fin', null) == resource.data.get('dt_fin', null)
+                        || request.resource.data.get('dt_fin', null) == null
+                        || request.resource.data.dt_fin == request.time)
+                    // El marcador de guardado (decide si un borrador local se
+                    // conserva o se descarta) no se falsifica: cadena corta,
+                    // y siempre con el sello del servidor al lado.
+                    && (!('guardado_rev' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.guardado_rev is string
+                            && request.resource.data.guardado_rev.size() <= 40
+                            && request.resource.data.guardado_en == request.time))
+                    && (!('guardado_en' in request.resource.data.diff(resource.data).affectedKeys())
+                        || request.resource.data.guardado_en == request.time)
+                    // Lety, por esta rama, solo mueve estado y firmas: aprobar,
+                    // rechazar o reabrir NUNCA viene con mediciones cambiadas
+                    // (una ficha aprobada lleva la firma del muestrista sobre
+                    // lo que ÉL capturó).
+                    && (!esAdmin()
+                        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'firma_m', 'firma_l']))
+                    // Los datos del PEDIDO que la ficha copió al nacer no se
+                    // reescriben por aquí: ni el muestrista (que podría poner
+                    // pares_requeridos = lo que entregó) ni Lety en esta rama
+                    // (ella tiene la suya, abajo, para OT/PO/agujado/pares).
+                    && request.resource.data.get('pares_requeridos', '') == resource.data.get('pares_requeridos', '')
+                    && request.resource.data.get('modelo', '') == resource.data.get('modelo', '')
+                    && request.resource.data.get('cliente', '') == resource.data.get('cliente', '')
+                    && request.resource.data.get('ot', '') == resource.data.get('ot', '')
+                    && request.resource.data.get('po', '') == resource.data.get('po', '')
+                    && request.resource.data.get('tipo_producto', '') == resource.data.get('tipo_producto', '')
+                    && request.resource.data.get('descripcion_variante', '') == resource.data.get('descripcion_variante', '')
+                    && request.resource.data.get('tipo_pack', '') == resource.data.get('tipo_pack', '')
                     // Identidad: mientras la ficha está en manos del muestrista
                     // (activo/pausado/correccion) solo su dueño real la edita;
                     // en cuanto pasa a manos de Lety (pendiente_lety/aprobado)
@@ -470,10 +657,38 @@ service cloud.firestore {
       // que una ficha empezada antes de que se generara la OT se quedaría sin
       // ella para siempre (y el CSV saldría incompleto). Solo de vacío a
       // lleno, sin tocar ningún otro campo ni el estado.
+      // `pares_requeridos` es distinto: sí puede CAMBIAR (el cliente bajó de 4
+      // a 2 a media marcha), pero solo en fichas que el muestrista todavía
+      // tiene en sus manos. Una firmada (pendiente_lety) o aprobada conserva
+      // lo que se le pidió cuando firmó: el valor vigente vive en la tarea.
       allow update: if esAdmin()
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ot', 'po', 'agujado'])
+                    && resource.data.estado != 'cancelada'
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ot', 'po', 'agujado', 'pares_requeridos'])
                     && completaTexto('ot', 40) && completaTexto('po', 40)
-                    && completaTexto('agujado', 10);
+                    && completaTexto('agujado', 10)
+                    && request.resource.data.get('pares_requeridos', '') is string
+                    && request.resource.data.get('pares_requeridos', '').size() <= 10
+                    && (request.resource.data.get('pares_requeridos', '') == resource.data.get('pares_requeridos', '')
+                        // Si cambia: solo en fichas abiertas, numérico, y
+                        // exactamente lo que la tarea ya dice (el ajuste se
+                        // escribe primero en desarrollos.pares_por_codigo)
+                        || (resource.data.estado in ['activo', 'pausado', 'correccion']
+                            && request.resource.data.pares_requeridos.matches('^[0-9]{1,10}$')
+                            && resource.data.codigo_variante in devDeCaptura(resource.data.id_desarrollo).get('pares_por_codigo', {})
+                            && request.resource.data.pares_requeridos == devDeCaptura(resource.data.id_desarrollo).pares_por_codigo[resource.data.codigo_variante]));
+      // ── Lety canceló la tarea: sus fichas NO APROBADAS se cierran con ella,
+      // en el mismo batch (por eso getAfter). Incluye las firmadas que
+      // esperaban revisión — si se quedaran vivas seguirían en la cola y en el
+      // dashboard. La firma del muestrista se conserva como evidencia. Una
+      // ficha cancelada no vuelve a ningún estado: `estadoCapturaValido` no la
+      // incluye, así que ninguna otra rama la acepta como origen ni destino.
+      allow update: if esAdmin()
+                    && resource.data.estado in ['activo', 'pausado', 'correccion', 'pendiente_lety']
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'cancelada_en', 'cancelada_por'])
+                    && request.resource.data.estado == 'cancelada'
+                    && request.resource.data.cancelada_en == request.time
+                    && request.resource.data.cancelada_por == miEmpleadoId()
+                    && getAfter(/databases/$(database)/documents/desarrollos/$(resource.data.id_desarrollo)).data.get('estado', '') == 'cancelada';
       allow delete: if false;
     }
 
@@ -500,6 +715,12 @@ service cloud.firestore {
       function miCaptura() {
         return get(/databases/$(database)/documents/capturas/$(capId)).data.id_muestrista == miEmpleadoId();
       }
+      function capturaAbierta() {
+        return get(/databases/$(database)/documents/capturas/$(capId)).data.estado in ['activo', 'pausado'];
+      }
+      function capturaCancelada() {
+        return get(/databases/$(database)/documents/capturas/$(capId)).data.get('estado', '') == 'cancelada';
+      }
       function causaValida(c) {
         return c in ['maquina', 'color', 'material', 'lety', 'cliente', 'falla', 'descanso', 'personal'];
       }
@@ -508,7 +729,9 @@ service cloud.firestore {
 
       // El dueño de la ficha solicita. Nace SIEMPRE pendiente: no puede
       // auto-aprobarse.
-      allow create: if esMuestristaActual() && miCaptura()
+      // Solo sobre una ficha ABIERTA: una cancelada o firmada ya no tiene a
+      // quién autorizarle nada, y la solicitud quedaría huérfana en la cola.
+      allow create: if esMuestristaActual() && miCaptura() && capturaAbierta()
                     && request.resource.data.keys().hasOnly(['estado', 'causa', 'solicitada_en', 'solicitada_por'])
                     && request.resource.data.estado == 'pendiente'
                     && causaValida(request.resource.data.causa)
@@ -527,6 +750,10 @@ service cloud.firestore {
          && request.resource.data.decidida_por == miEmpleadoId()
          && (request.resource.data.estado != 'aprobada'
              || request.resource.data.inicio_tm == request.time)
+         // Aprobar exige ficha ABIERTA: si el muestrista ya firmó (o la ficha
+         // se canceló) mientras la solicitud esperaba, no hay a quién
+         // autorizarle un tiempo muerto. Rechazar sí se puede siempre.
+         && (request.resource.data.estado != 'aprobada' || capturaAbierta())
          && (request.resource.data.estado != 'rechazada'
              || !('inicio_tm' in request.resource.data)))
         // ── El muestrista cierra su pausa cuando vuelve al trabajo.
@@ -543,7 +770,17 @@ service cloud.firestore {
             && resource.data.estado == 'pendiente'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'fin_tm'])
             && request.resource.data.estado == 'cancelada'
-            && request.resource.data.fin_tm == request.time);
+            && request.resource.data.fin_tm == request.time)
+        // ── Lety cierra las pausas de una ficha que ella misma canceló (junto
+        // con la tarea): una pendiente saldría de su cola sola, pero una
+        // aprobada se quedaría "viva" para siempre. Solo si la ficha YA está
+        // cancelada: no es una vía para cerrar pausas de fichas en curso.
+        || (esAdmin() && capturaCancelada()
+            && resource.data.estado in ['pendiente', 'aprobada']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'fin_tm', 'decidida_por'])
+            && request.resource.data.estado == 'cancelada'
+            && request.resource.data.fin_tm == request.time
+            && request.resource.data.decidida_por == miEmpleadoId());
       // Nadie borra una pausa: es el registro de en qué se fue el tiempo.
       allow delete: if false;
     }

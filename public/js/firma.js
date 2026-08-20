@@ -88,6 +88,11 @@ export async function saveSig() {
       });
       pauseT(capturaId, false);
       dropTimer(capturaId);
+      // El borrador local ya no aplica: lo firmado es lo que vale
+      try {
+        const { olvidarBorradorLocal } = await import('./captura.js');
+        olvidarBorradorLocal(capturaId);
+      } catch (e) { /* no bloquea la firma */ }
       APP.activasSnap = (APP.activasSnap || []).filter(d => d.id !== capturaId);
       APP.activeCap = null;
       APP.sigData = null;

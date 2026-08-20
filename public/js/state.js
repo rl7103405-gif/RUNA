@@ -39,9 +39,13 @@ export const APP = {
   pinBuf: [],
   pinTarget: null,
   vars: [],
+  vp0: '',           // pares de la variante 1 (el código de arriba) en modo pack
+  vp0Cod: '',        // a qué código pertenecen esos pares
+  cqExcl: false,     // Lety marcó que el código de arriba NO es una variante
   asignMode: 'single',
   activeCap: null,
   activeCapFolio: null,
+  activeCapDoc: null, // copia de la ficha abierta (para avisos sin re-pintar)
   capDirty: false,
   sigData: null,
   revCap: null,

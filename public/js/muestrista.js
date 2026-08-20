@@ -3,7 +3,7 @@ import { db, fsOk } from './fb.js';
 import { APP, USERS, TM_CAUSES, OPEN_STATES } from './state.js';
 import { es, fmt, fmtMin, fmtDate, getRange, toast, openOvl, closeOvl, tenFromDoc } from './utils.js';
 import { timers, getT, elapsedOf, tmOf, tenOf, startT, pauseT, startTM, startTMDesde, endTM, syncToFS, restoreTimers, seedFromDoc, dropTimer } from './timers.js';
-import { startCap, openCap, reopenCorreccion, refrescaBotonera } from './captura.js';
+import { startCap, openCap, reopenCorreccion, refrescaBotonera, refrescaAvisoPares, paresVigentes, cerrarFichaRemota } from './captura.js';
 
 export function mTab(i, btn) {
   [0, 1, 2].forEach(j => document.getElementById('mt' + j).classList.remove('on'));
@@ -40,6 +40,21 @@ export function initMuestrista() {
     .where('id_muestrista', '==', APP.user.id)
     .onSnapshot(snap => {
       APP.allCaps = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+      // Lety canceló la tarea con la ficha abierta en esta pantalla: se
+      // cierra sin guardar (las reglas ya no aceptarían la escritura).
+      if (APP.activeCap) {
+        const c = APP.allCaps.find(x => x.id === APP.activeCap);
+        if (c && c.data.estado === 'cancelada') {
+          toast('Lety canceló esta tarea — la ficha se cerró', false);
+          cerrarFichaRemota();
+        } else if (c && APP.activeCapDoc) {
+          // Si Lety propagó un ajuste de pares a esta ficha, la copia en
+          // memoria se actualiza para que el aviso no se quede pegado.
+          // Solo ese campo: el formulario nunca se repinta desde aquí.
+          APP.activeCapDoc.pares_requeridos = c.data.pares_requeridos;
+          refrescaAvisoPares();
+        }
+      }
       const open = APP.allCaps.filter(c => OPEN_STATES.includes(c.data.estado));
       open.forEach(c => seedFromDoc(c.id, c.data));
       // Timers locales de fichas ya firmadas/aprobadas (cerradas quizá desde
@@ -73,6 +88,7 @@ function varStatus(devId, cod) {
 }
 
 export function renderTareas() {
+  refrescaAvisoPares();
   const el = document.getElementById('tareas-list');
   if (!el) return;
   const cards = (APP.tareasSnap || [])
@@ -119,8 +135,13 @@ function renderTarea(devId, d) {
       } else {
         accion = `<button class="btn btn-am btn-sm" style="width:auto;padding:8px 14px" data-act="start" data-dev="${es(devId)}" data-cod="${es(v.codigo)}">▶ Iniciar</button>`;
       }
+      // Los pares que de verdad se piden: el ajuste de Lety (pares_por_codigo)
+      // manda sobre lo que traía la variante, y se marca para que se note.
+      const vig = paresVigentes(d, v.codigo);
+      const ajust = vig !== String(v.pares_requeridos || '');
+      const pack = v.tipo_pack || d.tipo_pack || '';
       return `<div class="vi">
-        <div style="flex:1"><div class="vcod">${es(v.codigo)}</div><div style="font-size:12px;color:var(--tx2)">${es(v.descripcion)} · ${es(v.pares_requeridos)} pares · ${es(v.tipo_pack)}</div></div>
+        <div style="flex:1"><div class="vcod">${es(v.codigo)}</div><div style="font-size:12px;color:var(--tx2)">${v.descripcion ? es(v.descripcion) + ' · ' : ''}<strong>${es(vig || '—')} pares</strong>${ajust ? ' <span class="bge bpend" style="font-size:10px">antes ' + (es(v.pares_requeridos) || '—') + '</span>' : ''}${pack ? ' · ' + es(pack) : ''}</div></div>
         ${accion}
       </div>`;
     }).join('')}
