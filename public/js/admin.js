@@ -1541,9 +1541,16 @@ async function cambiarPares(idx) {
     if (APP.tareaId === devId) await openTarea(devId);
   } catch (e) {
     console.error('cambiarPares:', e);
-    toast(e && e.code === 'permission-denied'
-      ? 'Firestore rechazó el cambio — avísale a Roberto'
-      : 'Error guardando los pares — revisa tu conexión', false);
+    if (e && e.code === 'permission-denied') {
+      // La causa normal no es un bug: la tarea ya se cerró (terminada o
+      // cancelada) desde que Lety abrió esta pantalla — pasó el 2026-08-21,
+      // quiso ajustar los pares justo después de aprobar la última ficha. Se
+      // recarga la tarea para que la pantalla diga en qué estado está.
+      toast('Los pares ya no se pueden cambiar: la tarea ya está terminada o cancelada (pantalla actualizada)', false);
+      if (APP.tareaId === devId) await openTarea(devId);
+    } else {
+      toast('Error guardando los pares — revisa tu conexión', false);
+    }
   } finally { cambiandoPares = null; }
 }
 
