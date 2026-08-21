@@ -26,3 +26,6 @@ Thumbs.db
 # Fichas técnicas de ejemplo (datos reales de producto, no van al repo)
 *.xlsx
 *.xls
+
+# Credenciales generadas por scripts/crear_cuentas.cjs (temporal, lo consume el Excel)
+scripts/.cuentas-nuevas.json

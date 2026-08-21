@@ -85,6 +85,46 @@ service cloud.firestore {
     function esMuestristaActual() {
       return tieneUsuarioActivo() && usuarioDoc().data.rol == 'muestrista';
     }
+    // CEO (2026-08-20): el papá de Roberto. Ve TODO (incluida la complejidad
+    // y las fichas técnicas) y no escribe NADA: ninguna regla de escritura lo
+    // nombra, y esAdmin() sigue siendo solo rol 'admin'.
+    function esCEO() {
+      return tieneUsuarioActivo() && usuarioDoc().data.rol == 'ceo';
+    }
+    function puedeLeerTodo() {
+      return esAdmin() || esCEO();
+    }
+    // Lectura por ambiente: Dirección y el admin REAL leen todo; el admin de
+    // PRUEBA solo lo marcado demo. Como las reglas no filtran, sus consultas
+    // deben traer where('demo','==',true) (ver enAmbiente() en state.js).
+    // El PIN de una cuenta de prueba es el que más se presta a compartirse:
+    // no debe abrir los datos de producción.
+    function leeAmbiente(data) {
+      return esCEO() || (esAdmin() && (!esDemo() || data.get('demo', false) == true));
+    }
+    function devEsDemo(devId) {
+      return get(/databases/$(database)/documents/desarrollos/$(devId)).data.get('demo', false) == true;
+    }
+    function leePrivadoDe(devId) {
+      return esCEO() || (esAdmin() && (!esDemo() || devEsDemo(devId)));
+    }
+    // Cuentas de PRUEBA (2026-08-20): usuarios/{uid}.demo == true. Son admin o
+    // muestrista de verdad para las reglas, pero solo pueden escribir en
+    // documentos marcados demo:true, y las cuentas reales solo en los que no
+    // lo están. La LECTURA también va por ambiente para la cuenta de prueba
+    // (leeAmbiente): sus consultas traen where('demo','==',true) o se rechazan.
+    // Los docs viejos no traen el campo: get(..., false) = reales.
+    function esDemo() {
+      return usuarioDoc().data.get('demo', false) == true
+        || usuarioDoc().data.get('empleadoId', '') in ['demo_lety', 'demo_muestrista'];
+    }
+    function mismoAmbiente(data) {
+      return data.get('demo', false) == esDemo();
+    }
+    // Las fichas de prueba no queman el consecutivo real de folios.
+    function contadorCapturas() {
+      return esDemo() ? 'capturas_demo' : 'capturas';
+    }
 
     // ── Helpers de datos (validación de forma, igual que antes) ──
     // Un campo vacío se puede llenar; uno que YA tiene valor queda congelado.
@@ -104,7 +144,12 @@ service cloud.firestore {
         && request.resource.data.get(campo, '').size() <= largo;
     }
     function esMuestristaId(id) {
-      return id in ['israel', 'jesus'];
+      return id in ['israel', 'jesus', 'demo_muestrista'];
+    }
+    // El muestrista de prueba solo recibe tareas de prueba, y los reales solo
+    // tareas reales: así ningún flujo de demo toca la cola de Israel o Jesús.
+    function asignadoEnAmbiente(id) {
+      return esDemo() ? id == 'demo_muestrista' : id in ['israel', 'jesus'];
     }
     function estadoCapturaValido(e) {
       return e in ['activo', 'pausado', 'pendiente_lety', 'correccion', 'aprobado'];
@@ -159,7 +204,7 @@ service cloud.firestore {
               'dt_inicio', 'dt_fin', 'iter', 'firma_m', 'firma_l',
               'maquina_marca', 'maquina_numero', 'agujado', 'med_sh', 'med_h',
               't_ciclo_min', 't_ciclo_seg', 'peso_sal', 'peso_cer', 'giros', 'vels',
-              'pto', 'pto_tabla', 'pares', 'obs', 'guardado_en', 'guardado_rev'];
+              'pto', 'pto_tabla', 'pares', 'obs', 'guardado_en', 'guardado_rev', 'demo'];
     }
     // Lo que la rama principal del update puede cambiar: la ficha práctica,
     // los tiempos, las firmas y las transiciones de estado. Nunca los datos
@@ -191,12 +236,18 @@ service cloud.firestore {
       // filtran, toda consulta de lista del muestrista debe traer su propio
       // where('asignado_a','==',...) o Firestore la rechaza entera
       // (ver muestrista.js y captura.js).
-      allow read: if esAdmin()
+      allow read: if leeAmbiente(resource.data)
                   || (esMuestristaActual() && resource.data.asignado_a == miEmpleadoId());
       allow create: if esAdmin()
                     && request.resource.data.modelo is string
                     && request.resource.data.modelo.size() > 0
                     && esMuestristaId(request.resource.data.asignado_a)
+                    // Ambiente: la tarea nace marcada como su creador, y se
+                    // asigna a un muestrista del mismo ambiente
+                    && 'demo' in request.resource.data
+                    && request.resource.data.demo is bool
+                    && request.resource.data.demo == esDemo()
+                    && asignadoEnAmbiente(request.resource.data.asignado_a)
                     && request.resource.data.estado == 'pendiente'
                     && !('tipo_complejidad' in request.resource.data)
                     && existsAfter(/databases/$(database)/documents/desarrollos_privado/$(devId))
@@ -236,7 +287,11 @@ service cloud.firestore {
       // al muestrista declarar terminada su propia tarea sin que Lety apruebe
       // nada (y el cierre alimenta las métricas de tiempo por tarea).
       // Los campos sensibles quedan congelados por el hasOnly de cada rama.
-      allow update: if
+      // Y NADIE cruza de ambiente: una cuenta de prueba no toca tareas reales
+      // ni al revés, y el flag no se cambia nunca.
+      allow update: if mismoAmbiente(resource.data)
+        && request.resource.data.get('demo', false) == resource.data.get('demo', false)
+        && (
         // ── El muestrista dueño solo arranca la tarea al iniciar una captura.
         (esMuestristaActual()
          && miEmpleadoId() == resource.data.asignado_a
@@ -387,7 +442,7 @@ service cloud.firestore {
             // (tareas viejas sin mapa: el cliente pone lo que traía la variante)
             && (!(ultimoCambio().codigo in paresAntes())
                 || ultimoCambio().de == paresAntes()[ultimoCambio().codigo])
-            && request.resource.data.ultimo_cambio_en == request.time);
+            && request.resource.data.ultimo_cambio_en == request.time));
       allow delete: if false;
     }
 
@@ -404,8 +459,9 @@ service cloud.firestore {
     // sin control. Los valores los valida el cliente. Es aceptable porque la
     // única que escribe aquí es Lety (admin), no un rol de piso.
     match /desarrollos_privado/{devId} {
-      allow read: if esAdmin();
+      allow read: if leePrivadoDe(devId);
       allow create: if esAdmin()
+                    && mismoAmbiente(getAfter(/databases/$(database)/documents/desarrollos/$(devId)).data)
                     && request.resource.data.keys().hasOnly(['tipo_complejidad', 'complejidad_por_codigo'])
                     && request.resource.data.tipo_complejidad in ['A', 'B', 'C']
                     && complejidadPorCodigoOk(devId)
@@ -429,6 +485,7 @@ service cloud.firestore {
       // (lo que no se podía hacer en el `create`, donde el límite documentado
       // sigue vigente porque ahí no hay un mapa previo con el que comparar).
       allow update: if esAdmin()
+                    && mismoAmbiente(getAfter(/databases/$(database)/documents/desarrollos/$(devId)).data)
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['complejidad_por_codigo'])
                     && request.resource.data.complejidad_por_codigo is map
                     && request.resource.data.complejidad_por_codigo.keys().size() <= 40
@@ -458,8 +515,9 @@ service cloud.firestore {
     // pasado (una ficha aprobada pasaría a estar "fuera de tolerancia" sin que
     // nadie tocara la medición). Una corrección se sube como desarrollo nuevo.
     match /desarrollos_privado/{devId}/fichas_tecnicas/{codigo} {
-      allow read: if esAdmin();
+      allow read: if leePrivadoDe(devId);
       allow create: if esAdmin()
+                    && mismoAmbiente(getAfter(/databases/$(database)/documents/desarrollos/$(devId)).data)
                     && request.resource.data.codigo == codigo
                     && request.resource.data.id_desarrollo == devId
                     && codigo.size() > 0 && codigo.size() <= 60
@@ -474,13 +532,19 @@ service cloud.firestore {
     match /capturas/{capId} {
       // Misma segmentación que desarrollos: Lety todo, el muestrista solo sus
       // fichas. El dashboard comparativo por muestrista es exclusivo de Lety.
-      allow read: if esAdmin()
+      allow read: if leeAmbiente(resource.data)
                   || (esMuestristaActual() && resource.data.id_muestrista == miEmpleadoId());
       allow create: if esMuestristaActual()
                     && request.resource.data.id_muestrista == miEmpleadoId()
                     && request.resource.data.id_desarrollo is string
                     && request.resource.data.codigo_variante is string
                     && request.resource.data.estado == 'activo'
+                    // Ambiente: la ficha nace marcada como su dueño, sobre una
+                    // tarea del mismo ambiente
+                    && 'demo' in request.resource.data
+                    && request.resource.data.demo is bool
+                    && request.resource.data.demo == esDemo()
+                    && mismoAmbiente(devDeCaptura(request.resource.data.id_desarrollo))
                     // Forma fija: ningún campo inventado, y nace en cero.
                     && request.resource.data.keys().hasOnly(camposCaptura())
                     && request.resource.data.elapsed_seg == 0
@@ -516,27 +580,27 @@ service cloud.firestore {
                     // Folio consecutivo obligatorio, amarrado al contador que
                     // la MISMA transacción deja actualizado (getAfter)
                     && request.resource.data.folio is string
-                    && request.resource.data.folio.matches('^FP-[0-9]{5,}$')
+                    && request.resource.data.folio.matches(esDemo() ? '^FD-[0-9]{5,}$' : '^FP-[0-9]{5,}$')
                     && request.resource.data.folio_seq is int
                     && request.resource.data.folio_seq > 0
                     // El texto del folio debe corresponder al número real del
                     // contador (tolera ceros a la izquierda, no los exige):
                     // sin esto, alguien podría crear folio_seq:2 con
                     // folio:"FP-00001" y falsificar el folio impreso.
-                    && request.resource.data.folio.matches('^FP-0*' + string(request.resource.data.folio_seq) + '$')
-                    && getAfter(/databases/$(database)/documents/contadores/capturas).data.seq == request.resource.data.folio_seq
+                    && request.resource.data.folio.matches((esDemo() ? '^FD-0*' : '^FP-0*') + string(request.resource.data.folio_seq) + '$')
+                    && getAfter(/databases/$(database)/documents/contadores/$(contadorCapturas())).data.seq == request.resource.data.folio_seq
                     // El contador debe apuntar a ESTA captura (su propio id):
                     // ata 1 folio <-> 1 captura, asi que un batch con dos
                     // capturas y el mismo folio_seq ya no pasa — el contador
                     // solo puede nombrar a una (pentest 2026-08-20).
-                    && getAfter(/databases/$(database)/documents/contadores/capturas).data.last_cap_id == capId
+                    && getAfter(/databases/$(database)/documents/contadores/$(contadorCapturas())).data.last_cap_id == capId
                     // Cierra el hueco de atomicidad: exige que el contador
                     // haya estado exactamente en folio_seq-1 ANTES de esta
                     // operación (o no existiera, si folio_seq==1) — no basta
                     // con que el valor final (getAfter) cuadre.
-                    && ((!exists(/databases/$(database)/documents/contadores/capturas) && request.resource.data.folio_seq == 1)
-                        || (exists(/databases/$(database)/documents/contadores/capturas)
-                            && get(/databases/$(database)/documents/contadores/capturas).data.seq == request.resource.data.folio_seq - 1))
+                    && ((!exists(/databases/$(database)/documents/contadores/$(contadorCapturas())) && request.resource.data.folio_seq == 1)
+                        || (exists(/databases/$(database)/documents/contadores/$(contadorCapturas()))
+                            && get(/databases/$(database)/documents/contadores/$(contadorCapturas())).data.seq == request.resource.data.folio_seq - 1))
                     // El dueño de la captura debe ser el mismo empleado
                     // asignado al desarrollo, y la variante debe pertenecer
                     // realmente a ese desarrollo (evita fichas fraudulentas)
@@ -548,6 +612,7 @@ service cloud.firestore {
                     // una tarea muerta.
                     && get(/databases/$(database)/documents/desarrollos/$(request.resource.data.id_desarrollo)).data.get('estado', '') in ['pendiente', 'en_proceso'];
       allow update: if estadoCapturaValido(request.resource.data.estado)
+                    && mismoAmbiente(resource.data)
                     // Lista blanca de lo que esta rama puede tocar: la ficha
                     // práctica, tiempos, firmas y estado. Nada inventado.
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposEditablesCaptura())
@@ -662,6 +727,7 @@ service cloud.firestore {
       // tiene en sus manos. Una firmada (pendiente_lety) o aprobada conserva
       // lo que se le pidió cuando firmó: el valor vigente vive en la tarea.
       allow update: if esAdmin()
+                    && mismoAmbiente(resource.data)
                     && resource.data.estado != 'cancelada'
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ot', 'po', 'agujado', 'pares_requeridos'])
                     && completaTexto('ot', 40) && completaTexto('po', 40)
@@ -683,6 +749,7 @@ service cloud.firestore {
       // ficha cancelada no vuelve a ningún estado: `estadoCapturaValido` no la
       // incluye, así que ninguna otra rama la acepta como origen ni destino.
       allow update: if esAdmin()
+                    && mismoAmbiente(resource.data)
                     && resource.data.estado in ['activo', 'pausado', 'correccion', 'pendiente_lety']
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'cancelada_en', 'cancelada_por'])
                     && request.resource.data.estado == 'cancelada'
@@ -721,18 +788,27 @@ service cloud.firestore {
       function capturaCancelada() {
         return get(/databases/$(database)/documents/capturas/$(capId)).data.get('estado', '') == 'cancelada';
       }
+      function capturaMismoAmbiente() {
+        return mismoAmbiente(get(/databases/$(database)/documents/capturas/$(capId)).data);
+      }
+      function capturaLegible() {
+        return leeAmbiente(get(/databases/$(database)/documents/capturas/$(capId)).data);
+      }
       function causaValida(c) {
         return c in ['maquina', 'color', 'material', 'lety', 'cliente', 'falla', 'descanso', 'personal'];
       }
       // Lety necesita verlas todas para autorizarlas; el muestrista, las suyas.
-      allow read: if esAdmin() || (esMuestristaActual() && miCaptura());
+      allow read: if capturaLegible() || (esMuestristaActual() && miCaptura());
 
       // El dueño de la ficha solicita. Nace SIEMPRE pendiente: no puede
       // auto-aprobarse.
       // Solo sobre una ficha ABIERTA: una cancelada o firmada ya no tiene a
       // quién autorizarle nada, y la solicitud quedaría huérfana en la cola.
-      allow create: if esMuestristaActual() && miCaptura() && capturaAbierta()
-                    && request.resource.data.keys().hasOnly(['estado', 'causa', 'solicitada_en', 'solicitada_por'])
+      // `demo` va también en la pausa: es lo único que permite al admin de
+      // prueba consultar el collectionGroup sin que le lleguen las reales
+      allow create: if esMuestristaActual() && miCaptura() && capturaAbierta() && capturaMismoAmbiente()
+                    && request.resource.data.keys().hasOnly(['estado', 'causa', 'solicitada_en', 'solicitada_por', 'demo'])
+                    && request.resource.data.get('demo', false) == esDemo()
                     && request.resource.data.estado == 'pendiente'
                     && causaValida(request.resource.data.causa)
                     && request.resource.data.solicitada_en == request.time
@@ -741,7 +817,7 @@ service cloud.firestore {
       allow update: if
         // ── Lety decide. `inicio_tm` lo pone el servidor: es el instante en
         // que empieza a contar el tiempo muerto.
-        (esAdmin()
+        (esAdmin() && capturaMismoAmbiente()
          && resource.data.estado == 'pendiente'
          && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['estado', 'decidida_en', 'decidida_por', 'inicio_tm'])
@@ -757,7 +833,7 @@ service cloud.firestore {
          && (request.resource.data.estado != 'rechazada'
              || !('inicio_tm' in request.resource.data)))
         // ── El muestrista cierra su pausa cuando vuelve al trabajo.
-        || (esMuestristaActual() && miCaptura()
+        || (esMuestristaActual() && miCaptura() && capturaMismoAmbiente()
             && resource.data.estado == 'aprobada'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'fin_tm'])
             && request.resource.data.estado == 'finalizada'
@@ -766,7 +842,7 @@ service cloud.firestore {
         // firmar la ficha: si la pausa quedara viva, seguiría en la cola de
         // Lety y podría revivir con su hora original si la ficha se reabre
         // para corrección, inflando el tiempo muerto sin que nadie la pidiera.
-        || (esMuestristaActual() && miCaptura()
+        || (esMuestristaActual() && miCaptura() && capturaMismoAmbiente()
             && resource.data.estado == 'pendiente'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'fin_tm'])
             && request.resource.data.estado == 'cancelada'
@@ -775,7 +851,7 @@ service cloud.firestore {
         // con la tarea): una pendiente saldría de su cola sola, pero una
         // aprobada se quedaría "viva" para siempre. Solo si la ficha YA está
         // cancelada: no es una vía para cerrar pausas de fichas en curso.
-        || (esAdmin() && capturaCancelada()
+        || (esAdmin() && capturaCancelada() && capturaMismoAmbiente()
             && resource.data.estado in ['pendiente', 'aprobada']
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'fin_tm', 'decidida_por'])
             && request.resource.data.estado == 'cancelada'
@@ -807,7 +883,8 @@ service cloud.firestore {
     // con ese nombre, sus documentos pendientes quedarían visibles al admin:
     // usar otro nombre, o añadir un discriminador validado.
     match /{path=**}/pausas/{pausaId} {
-      allow list: if esAdmin() && resource.data.estado == 'pendiente';
+      allow list: if puedeLeerTodo() && resource.data.estado == 'pendiente'
+                  && (!esDemo() || resource.data.get('demo', false) == true);
     }
 
     // ── contadores: folios consecutivos (doc 'capturas' = { seq }) ──
@@ -821,26 +898,39 @@ service cloud.firestore {
     // hay forma de probarlo en local (el emulador de Firestore necesita Java,
     // que no está instalado) y toca la ruta crítica de creación de fichas.
     match /contadores/{docId} {
-      allow read: if tieneUsuarioActivo();
+      // Solo quien crea fichas necesita leerlo (su transacción), y solo el suyo
+      allow read: if esMuestristaActual() && docId == contadorCapturas();
       // last_cap_id ata el contador a la UNICA captura creada en la misma
       // operacion (getAfter): sin esto, un solo batch podia incrementar el
       // contador una vez y crear DOS capturas con el mismo folio_seq — dos
       // papeles con el mismo folio, justo lo que se intento cerrar el
       // 2026-08-08 y seguia abierto para el caso batch (pentest 2026-08-20).
       allow create: if esMuestristaActual()
-                    && docId == 'capturas'
+                    && docId == contadorCapturas()
                     && request.resource.data.keys().hasOnly(['seq', 'last_cap_id'])
                     && request.resource.data.seq is int
                     && request.resource.data.seq == 1
                     && request.resource.data.last_cap_id is string
-                    && getAfter(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id)).data.folio_seq == request.resource.data.seq;
+                    && getAfter(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id)).data.folio_seq == request.resource.data.seq
+                    // La ficha a la que apunta nace EN ESTA operación y es de
+                    // este ambiente: sin esto, el contador de prueba podía
+                    // avanzar señalando una ficha real con el mismo número
+                    && !exists(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id))
+                    && existsAfter(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id))
+                    && mismoAmbiente(getAfter(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id)).data);
       allow update: if esMuestristaActual()
-                    && docId == 'capturas'
+                    && docId == contadorCapturas()
                     && request.resource.data.keys().hasOnly(['seq', 'last_cap_id'])
                     && request.resource.data.seq is int
                     && request.resource.data.seq == resource.data.seq + 1
                     && request.resource.data.last_cap_id is string
-                    && getAfter(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id)).data.folio_seq == request.resource.data.seq;
+                    && getAfter(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id)).data.folio_seq == request.resource.data.seq
+                    // La ficha a la que apunta nace EN ESTA operación y es de
+                    // este ambiente: sin esto, el contador de prueba podía
+                    // avanzar señalando una ficha real con el mismo número
+                    && !exists(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id))
+                    && existsAfter(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id))
+                    && mismoAmbiente(getAfter(/databases/$(database)/documents/capturas/$(request.resource.data.last_cap_id)).data);
       allow delete: if false;
     }
 
@@ -857,8 +947,8 @@ service cloud.firestore {
       // Solo Lety usa el catálogo (autollenado/import en admin.js); el
       // muestrista nunca lo lee. Lectura amplia exponía todos los códigos,
       // modelos y clientes de todos los pedidos a cualquier cuenta activa.
-      allow read: if esAdmin();
-      allow create, update: if esAdmin()
+      allow read: if esCEO() || (esAdmin() && !esDemo());
+      allow create, update: if esAdmin() && !esDemo()
                     && request.resource.data.keys().hasOnly([
                          'codigo', 'descripcion', 'modelo', 'cliente', 'pares_requeridos',
                          'tipo_pack', 'genero', 'talla', 'tipo_producto', 'codigo_quini', 'actualizado'])
@@ -875,7 +965,7 @@ service cloud.firestore {
                     && textoCat(request.resource.data, 'tipo_producto')
                     && textoCat(request.resource.data, 'codigo_quini')
                     && request.resource.data.actualizado == request.time;
-      allow delete: if esAdmin();
+      allow delete: if esAdmin() && !esDemo();
     }
 
     // ── catalogo_meta/info: última importación. Su importId es lo que
@@ -883,8 +973,8 @@ service cloud.firestore {
     match /catalogo_meta/{docId} {
       // Mismo criterio que catalogo/: solo lo consume watchCatalogo() en
       // admin.js (pantalla de Lety).
-      allow read: if esAdmin();
-      allow write: if esAdmin()
+      allow read: if esCEO() || (esAdmin() && !esDemo());
+      allow write: if esAdmin() && !esDemo()
                    && docId == 'info'
                    && request.resource.data.keys().hasOnly(['filas_importadas', 'total_archivo', 'fuente', 'importId', 'actualizado'])
                    && request.resource.data.filas_importadas is int
@@ -901,7 +991,8 @@ service cloud.firestore {
     // ── _ping: test de conectividad (write de prueba al arrancar sesión) ──
     match /_ping/{docId} {
       allow read: if tieneUsuarioActivo();
-      allow write: if tieneUsuarioActivo()
+      // El CEO no escribe ni esto: su indicador de conexión usa un get()
+      allow write: if tieneUsuarioActivo() && !esCEO()
                    && docId == 'test'
                    && request.resource.data.keys().hasOnly(['ts'])
                    && request.resource.data.ts is number;

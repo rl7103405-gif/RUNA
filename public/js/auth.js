@@ -1,11 +1,11 @@
 // Login con PIN (= contraseña de la cuenta de Firebase Auth del empleado) +
 // cambio del PIN propio.
-import { db, auth, fsOk } from './fb.js';
+import { db, auth, fsOk, pingFS } from './fb.js';
 import { APP, USERS, EMPLEADO_EMAIL } from './state.js';
 import { scr, toast, gv, openOvl, closeOvl } from './utils.js';
 import { clearAllTimers } from './timers.js';
 import { initMuestrista } from './muestrista.js';
-import { initLety, setBadgePendientes, invalidarLookups } from './admin.js';
+import { initLety, setBadgePendientes, invalidarLookups, limpiarCacheAdmin, resetAsignar } from './admin.js';
 
 export function selectUser(uid) {
   APP.pinTarget = uid;
@@ -108,7 +108,17 @@ async function submitPin() {
       mostrarError(uid, 'Tu cuenta está desactivada — avisa a Roberto');
       return;
     }
-    login(uid, perfil.data().rol);
+    // El ambiente (demo o real) lo dice el PERFIL, no el botón que se tocó:
+    // si alguien crea una cuenta demo sin el flag, entra como real y las
+    // reglas la tratan como real. Se avisa si el botón y el perfil no cuadran.
+    const esDemoPerfil = perfil.data().demo === true;
+    if (esDemoPerfil !== (USERS[uid].demo === true)) {
+      console.error('El perfil usuarios/' + auth.currentUser.uid + ' tiene demo=' + esDemoPerfil + ' pero la app esperaba ' + (USERS[uid].demo === true) + ' para ' + uid);
+      await auth.signOut().catch(() => {});
+      mostrarError(uid, 'Esta cuenta está mal configurada (ambiente). Avísale a Roberto');
+      return;
+    }
+    login(uid, perfil.data().rol, perfil.data());
   } catch (e) {
     console.error('login:', e);
     mostrarError(uid, mensajeError(e.code));
@@ -117,10 +127,15 @@ async function submitPin() {
   }
 }
 
-export function login(uid, rol) {
-  APP.user = { id: uid, ...USERS[uid] };
-  if (rol === 'admin') { initLety(); scr('sL'); }
+export function login(uid, rol, perfil) {
+  APP.sesion = (APP.sesion || 0) + 1;
+  APP.user = { id: uid, ...USERS[uid], demo: !!(perfil && perfil.demo === true) };
+  // El CEO usa la pantalla de Lety en modo solo lectura: las reglas ya le
+  // niegan toda escritura; esto solo le quita de enfrente los botones.
+  APP.soloLectura = rol === 'ceo';
+  if (rol === 'admin' || rol === 'ceo') { initLety(); scr('sL'); }
   else { initMuestrista(); scr('sM'); }
+  pingFS(); // el indicador de conexión arranca ya sabiendo el modo (lectura o escritura)
   // Vigila el propio perfil para cortar la sesión en vivo si Lety desactiva
   // esta cuenta mientras la tablet ya está abierta (si no, sigue con la UI y
   // los timers corriendo hasta que falle un guardado sin explicación). Se
@@ -145,6 +160,12 @@ export function logout() {
   APP.pausasVistas = {};
   APP.pausasPend = [];
   APP.user = null;
+  APP.soloLectura = false;
+  limpiarCacheAdmin();
+  resetAsignar(); // lo escrito sin enviar no le aparece a la siguiente cuenta
+  // "Otros accesos" vuelve a plegarse: la pantalla de la tablet es la de siempre
+  const ot = document.getElementById('otros-toggle'); if (ot) ot.style.display = '';
+  const oa = document.getElementById('otros-accesos'); if (oa) oa.style.display = 'none';
   APP.vars = [];
   APP.vp0 = ''; APP.vp0Cod = ''; APP.cqExcl = false;
   APP.activeCapDoc = null;
@@ -155,6 +176,19 @@ export function logout() {
   APP.dbDocs = [];
   APP.activeCap = null;
   APP.activeCapFolio = null;
+  APP.revCap = null; APP.revFolio = null; APP.revFicha = null;
+  APP.tareaId = null; APP.tareaDoc = null; APP.tareaFichas = {};
+  APP.sesion = (APP.sesion || 0) + 1; // lo que esté en vuelo ya no pinta
+  // Tablet compartida: que la siguiente sesión no vea lo que pintó la anterior
+  // (otra persona, otro ambiente) ni un segundo
+  [['pend-list', '⏳', 'Cargando pendientes…'], ['proc-list', '⏱', 'Sin capturas activas'],
+   ['tk-list', '⏳', 'Cargando tareas…'], ['db-list', '', ''], ['db-cmp', '', ''],
+   ['pausas-list', '', ''], ['tk-body', '', ''], ['rbody', '', ''], ['cbody', '', '']].forEach(([id, ico, txt]) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = txt ? '<div class="empty"><div class="ico">' + ico + '</div><p>' + txt + '</p></div>' : '';
+  });
+  ['db0', 'db1', 'db2', 'db3'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
+  const pw = document.getElementById('pausas-wrap'); if (pw) pw.style.display = 'none';
   setBadgePendientes(0); // que no quede el conteo viejo al reingresar
   if (auth) auth.signOut().catch(() => {});
   scr('s0');

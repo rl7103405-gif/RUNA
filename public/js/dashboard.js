@@ -2,7 +2,7 @@
 // La exportación (CSV y Excel) vive en export.js, con una sola definición de
 // columnas compartida por ambos formatos.
 import { db, fsOk } from './fb.js';
-import { APP, USERS, TM_CAUSES } from './state.js';
+import { APP, USERS, TM_CAUSES, muestristasDe, esDeMiAmbiente, enAmbiente } from './state.js';
 import { es, fmtMin, fmtDate, getRange, toast, tenFromDoc } from './utils.js';
 
 // Identificador de carga: si el filtro cambia mientras una consulta vieja
@@ -19,13 +19,15 @@ export async function loadDB() {
     const period = document.getElementById('dp')?.value || 'month';
     const who = document.getElementById('dw')?.value || 'all';
     const { start, end } = getRange(period);
-    let q = db.collection('capturas');
+    let q = enAmbiente(db.collection('capturas'));
     if (who !== 'all') q = q.where('id_muestrista', '==', who);
+    const ses = APP.sesion;
     const snap = await q.get();
-    if (seq !== loadSeq) return; // llegó tarde: ya hay una carga más nueva
+    if (seq !== loadSeq || ses !== APP.sesion) return; // llegó tarde: ya hay una carga más nueva u otra sesión
     // Filtrado por fecha/estado en cliente (evita índices compuestos)
     const docs = snap.docs.filter(d => {
       const dt = d.data();
+      if (!esDeMiAmbiente(dt)) return false; // las fichas de prueba no entran a los KPIs reales
       if (!dt.dt_fin) return false;
       const ms = dt.dt_fin.toMillis ? dt.dt_fin.toMillis() : 0;
       return ms >= start && ms <= end && ['aprobado', 'pendiente_lety', 'correccion'].includes(dt.estado);
@@ -54,7 +56,7 @@ export async function loadDB() {
           return `<div class="card" style="margin-bottom:8px">
             <div style="display:flex;align-items:center;gap:8px">
               <span class="vcod">${es(dt.codigo_variante)}</span>
-              <span style="font-size:13px;font-weight:600;flex:1">${es(dt.modelo)}</span>
+              <span style="font-size:13px;font-weight:600;flex:1">${es(dt.modelo)}${dt.demo ? ' <span class="bge bpend">DEMO</span>' : ''}</span>
               ${badge}
             </div>
             <div class="mr"><span>${dt.folio ? es(dt.folio) + ' · ' : ''}${(USERS[dt.id_muestrista] || {}).nombre || es(dt.id_muestrista)}</span><span>${fmtDate(dt.dt_fin)}</span></div>
@@ -81,7 +83,7 @@ function renderBarras(cmpEl, who, docs, aprob) {
   if (!cmpEl) return;
   let html = '';
   if (who === 'all') {
-    const series = Object.keys(USERS).filter(u => USERS[u].rol === 'muestrista').map(uid => {
+    const series = muestristasDe(!!(APP.user && APP.user.demo)).map(uid => {
       const de = aprob.filter(d => d.data().id_muestrista === uid);
       const avg = de.length ? de.reduce((a, d) => a + tenFromDoc(d.data()), 0) / de.length / 60 : 0;
       return { label: USERS[uid].nombre, n: de.length, val: Math.round(avg) };

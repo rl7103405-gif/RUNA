@@ -272,6 +272,7 @@ async function startTMCause(capturaId, causeId) {
       causa: causeId,
       solicitada_en: firebase.firestore.FieldValue.serverTimestamp(),
       solicitada_por: APP.user.id,
+      demo: !!(APP.user && APP.user.demo), // ambiente: el admin de prueba filtra por esto
     });
     const cause = TM_CAUSES.find(c => c.id === causeId);
     toast('✋ Pausa pedida: ' + (cause ? cause.label : causeId));

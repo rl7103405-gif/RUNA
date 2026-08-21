@@ -1,6 +1,6 @@
 // Vista de Lety: asignación de desarrollos y revisión/aprobación de fichas
 import { db, fsOk } from './fb.js';
-import { APP, USERS, TM_CAUSES } from './state.js';
+import { APP, USERS, TM_CAUSES, muestristasDe, esDeMiAmbiente, enAmbiente } from './state.js';
 import { es, fmt, fmtMin, fmtDate, gv, scr, toast, confirmDlg, tenFromDoc, esFirmaValida, loadLib, showExito, openOvl, closeOvl } from './utils.js';
 import { parseLibro, comparar } from './ficha-tecnica.js';
 import { showFirma } from './firma.js';
@@ -35,7 +35,7 @@ export async function reconciliarEstadoTarea(devId) {
     // una tarea vacía.
     if (codigos.length === 0) return;
 
-    const capsSnap = await db.collection('capturas').where('id_desarrollo', '==', devId).get();
+    const capsSnap = await enAmbiente(db.collection('capturas').where('id_desarrollo', '==', devId)).get();
     const caps = capsSnap.docs.map(d => d.data());
     // Un código está listo solo si NINGUNA de sus fichas sigue en manos de
     // alguien (una variante aprobada puede recapturarse) y al menos una quedó
@@ -68,6 +68,8 @@ export async function reconciliarEstadoTarea(devId) {
 }
 
 export function ltTab(i, btn) {
+  if (APP.soloLectura && (i === 0 || i === 3)) return; // Dirección no asigna ni configura
+  if (APP.user && APP.user.demo && i === 3) return;     // el catálogo es del ambiente real
   [0, 1, 2, 3, 4].forEach(j => { const e = document.getElementById('lt' + j); if (e) e.classList.remove('on'); });
   document.getElementById('lt' + i).classList.add('on');
   document.querySelectorAll('#sL .nb').forEach(b => b.classList.remove('on'));
@@ -77,18 +79,77 @@ export function ltTab(i, btn) {
   if (i === 4) loadTareas();
 }
 
+// ── Ambiente y modo de la pantalla de administración ──
+// (esDeMiAmbiente / enAmbiente viven en state.js: la cuenta de prueba consulta
+// con where('demo','==',true) —las reglas no le dejan leer lo real— y la real
+// lee todo y filtra en pantalla.)
+
+// Dirección solo consulta: las reglas ya niegan toda escritura; esto evita
+// que un botón que se coló dispare una petición condenada y un toast confuso.
+function soloConsulta() {
+  if (!APP.soloLectura) return false;
+  toast('Tu cuenta es de consulta: esto lo hace Lety', false);
+  return true;
+}
+
+// Deja el formulario de Asignar (y la ficha técnica subida) en blanco. Se
+// llama al cerrar sesión y al entrar: en una tablet compartida, lo que Lety
+// dejó escrito sin enviar no debe aparecerle a la siguiente cuenta.
+export function resetAsignar() {
+  APP.vars = []; APP.vp0 = ''; APP.vp0Cod = ''; APP.cqExcl = false;
+  ['l-ot', 'l-po', 'l-cq', 'l-mod', 'l-cli', 'l-gen', 'l-tal', 'l-tprod', 'l-ag', 'l-pack', 'l-notas',
+   's-cod', 's-desc', 's-pares', 'vc', 'vd', 'vp', 'ft-ot', 'ft-po', 'ft-notas', 'ft-pack'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  FT = { fichas: [], errores: [], archivo: '', filas: null, meta: null };
+  const file = document.getElementById('ft-file'); if (file) file.value = '';
+  const ui = document.getElementById('ft-ui'); if (ui) ui.innerHTML = '';
+  const vl = document.getElementById('vlist'); if (vl) vl.innerHTML = '';
+}
+
+function aplicarAmbiente() {
+  const demo = !!(APP.user && APP.user.demo);
+  const ro = !!APP.soloLectura;
+  // Selectores de muestrista: solo los del ambiente
+  const nombres = muestristasDe(demo);
+  const pinta = (id, conTodos, textoTodos) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = (conTodos ? '<option value="all">' + textoTodos + '</option>' : '')
+      + nombres.map(u => '<option value="' + es(u) + '">' + es((USERS[u] || {}).nombre || u) + '</option>').join('');
+  };
+  pinta('l-asig', false);
+  pinta('dw', true, 'Todos');
+  pinta('tk-quien', true, demo ? 'Todos (demo)' : 'Los dos');
+  // Título: que se note en qué ambiente y modo se está
+  const h = document.getElementById('sL-title');
+  if (h) h.textContent = (APP.user ? APP.user.nombre : 'Lety') + ' — ' + (ro ? 'Dirección · solo consulta' : demo ? 'PRUEBAS (nada de esto es real)' : 'Administración');
+  // Dirección: sin Asignar ni Config; arranca en el Dashboard
+  const na = document.getElementById('nav-asignar'); if (na) na.style.display = ro ? 'none' : '';
+  // Config (catálogo, PINs) es del ambiente REAL: ni Dirección ni las cuentas
+  // de prueba lo tocan (las reglas niegan la importación al demo)
+  const nc = document.getElementById('nav-config'); if (nc) nc.style.display = (ro || demo) ? 'none' : '';
+  // Cada sesión arranca en su pestaña inicial, no en la que dejó la anterior
+  // (una tablet compartida podía quedarse en Config o en el Dashboard de otro)
+  const inicial = ro ? document.getElementById('nav-dashboard') : document.getElementById('nav-asignar');
+  if (inicial) ltTab(ro ? 2 : 0, inicial);
+  if (!ro) { resetAsignar(); setMode('single'); }
+}
+
 export function initLety() {
   // Los listeners se apagan y se vuelven a crear en cada login (logout() los
   // limpia): así no se duplican si Lety cierra y abre sesión en la tablet
   APP.listeners.forEach(u => { try { u(); } catch (e) {} });
   APP.listeners = [];
+  aplicarAmbiente();
   // Pendientes en vivo: alimenta el contador del menú y la lista de revisión
   // (antes loadRev hacía otra consulta idéntica; ahora solo carga "En proceso")
-  APP.listeners.push(db.collection('capturas')
-    .where('estado', '==', 'pendiente_lety')
+  APP.listeners.push(enAmbiente(db.collection('capturas')
+    .where('estado', '==', 'pendiente_lety'))
     .onSnapshot(snap => {
       if (!APP.user || APP.user.rol !== 'lety') return; // callback tardío
-      const docs = snap.docs;
+      const docs = snap.docs.filter(d => esDeMiAmbiente(d.data()));
       setBadgePendientes(docs.length);
       const el = document.getElementById('pend-list');
       if (el) el.innerHTML = docs.length === 0
@@ -102,8 +163,8 @@ export function initLety() {
     }));
   // Pausas pedidas por los muestristas, de todas las fichas a la vez.
   // Es un collectionGroup: cada pausa vive bajo su propia captura.
-  APP.listeners.push(db.collectionGroup('pausas')
-    .where('estado', '==', 'pendiente')
+  APP.listeners.push(enAmbiente(db.collectionGroup('pausas')
+    .where('estado', '==', 'pendiente'))
     .onSnapshot(snap => {
       if (!APP.user || APP.user.rol !== 'lety') return;
       // El id del padre identifica la ficha: en un collectionGroup los
@@ -133,7 +194,9 @@ export function initLety() {
         l.innerHTML = '<div class="al alr"><span>⚠️</span><span style="font-size:12px">No se pudieron cargar las pausas pedidas — avísale a Roberto: <b>' + es(causa) + '</b></span></div>';
       }
     }));
-  const unsubCat = watchCatalogo();
+  // El catálogo es del ambiente real: la cuenta de prueba ni lo escucha (las
+  // reglas se lo niegan y solo llenaría la consola de permission-denied)
+  const unsubCat = APP.user && APP.user.demo ? null : watchCatalogo();
   if (unsubCat) APP.listeners.push(unsubCat);
   loadRev();
 }
@@ -143,8 +206,10 @@ export function initLety() {
 // (decisión del dueño), así que estas solicitudes son urgentes.
 // Cruza cada solicitud con su ficha para que la tarjeta diga de CUÁL es.
 // Se cachea por captura: las fichas abiertas son pocas y no cambian de folio.
-const cacheFichas = {};
+let cacheFichas = {};
 const fichasEnVuelo = {};
+// Al cerrar sesión: que una tablet compartida no arrastre fichas de otra sesión
+export function limpiarCacheAdmin() { cacheFichas = {}; }
 async function etiquetarPausas() {
   const pend = APP.pausasPend || [];
   // Se descartan las que ya están cacheadas Y las que tienen un get() en
@@ -161,7 +226,7 @@ async function etiquetarPausas() {
       // nombre equivocado la tarjeta mostraba solo el folio.
       if (s.exists) {
         const d = s.data();
-        cacheFichas[id] = [d.folio, d.codigo_variante].filter(Boolean).join(' · ');
+        cacheFichas[id] = { etiqueta: [d.folio, d.codigo_variante].filter(Boolean).join(' · '), demo: d.demo === true };
       }
     } catch (e) {
       console.error('ficha de la pausa:', e);
@@ -174,22 +239,27 @@ function renderPausas() {
   const wrap = document.getElementById('pausas-wrap');
   const lista = document.getElementById('pausas-list');
   if (!wrap || !lista) return;
-  const pend = APP.pausasPend || [];
+  // Solo las pausas de fichas de MI ambiente. Hasta que no se conoce la
+  // ficha (get() en vuelo) la solicitud no se pinta: etiquetarPausas() vuelve
+  // a llamar aquí en cuanto la tiene.
+  const pend = (APP.pausasPend || []).filter(p => p.capId && cacheFichas[p.capId]
+    && cacheFichas[p.capId].demo === !!(APP.user && APP.user.demo));
   wrap.style.display = pend.length ? '' : 'none';
   setBadgePendientes(document.querySelectorAll('#pend-list .card').length, pend.length);
   if (!pend.length) { lista.innerHTML = ''; return; }
+  const ro = !!APP.soloLectura;
   lista.innerHTML = pend.map(({ id, data: p, capId }) => {
     const c = TM_CAUSES.find(x => x.id === p.causa);
     const quien = (USERS[p.solicitada_por] || {}).nombre || p.solicitada_por;
-    const ficha = capId ? cacheFichas[capId] : '';
+    const ficha = capId && cacheFichas[capId] ? cacheFichas[capId].etiqueta : '';
     return `<div class="card am">
       <div class="dt">${es(quien)} pide pausa${ficha ? ' — <span style="font-family:var(--mono);font-size:13px">' + es(ficha) + '</span>' : ''}</div>
       <div class="ds">${es(c ? c.label : p.causa)}${c && !c.ext ? ' · <span class="bge bpend">interna</span>' : ''}</div>
       <div class="mr"><span style="font-size:11px;color:var(--tx3)">Pedida ${fmtDate(p.solicitada_en)} · el tiempo sigue corriendo</span><span></span></div>
-      <div class="brow" style="margin-top:8px">
+      ${ro ? '' : `<div class="brow" style="margin-top:8px">
         <button class="btn btn-gn btn-sm" style="flex:1" data-pausa-ok="${es(id)}">✓ Autorizar</button>
         <button class="btn btn-rd btn-sm" style="flex:1" data-pausa-no="${es(id)}">✕ Rechazar</button>
-      </div>
+      </div>`}
     </div>`;
   }).join('');
 }
@@ -197,7 +267,7 @@ function renderPausas() {
 let decidiendo = false;
 
 async function decidirPausa(pausaId, aprobar) {
-  if (decidiendo) return;
+  if (decidiendo || soloConsulta()) return;
   const item = (APP.pausasPend || []).find(x => x.id === pausaId);
   if (!item) return;
   decidiendo = true;
@@ -223,7 +293,11 @@ export function setBadgePendientes(n, pausas) {
   if (!b) return;
   // El contador junta lo que espera decisión de Lety: fichas por revisar y
   // pausas por autorizar (estas último urgen: el cronómetro sigue corriendo).
-  const p = pausas === undefined ? (APP.pausasPend || []).length : pausas;
+  // Solo las pausas de MI ambiente (las de fichas aún no consultadas no cuentan)
+  const p = pausas === undefined
+    ? (APP.pausasPend || []).filter(x => x.capId && cacheFichas[x.capId]
+        && cacheFichas[x.capId].demo === !!(APP.user && APP.user.demo)).length
+    : pausas;
   const total = (n || 0) + p;
   b.textContent = total > 99 ? '99+' : String(total);
   b.style.display = total > 0 ? '' : 'none';
@@ -301,7 +375,7 @@ function ftEstado() {
   // Los datos de la tarea también se recuerdan: el panel se re-dibuja entero
   // en cada cambio, y sin esto se perderían OT, PO, notas y sobre todo el
   // muestrista asignado, que es INMUTABLE una vez creada la tarea.
-  if (!FT.meta) FT.meta = { asig: 'israel', ot: '', po: '', notas: '', pack: '' };
+  if (!FT.meta) FT.meta = { asig: muestristasDe(!!(APP.user && APP.user.demo))[0], ot: '', po: '', notas: '', pack: '' };
   return FT.filas;
 }
 
@@ -365,8 +439,7 @@ function renderFichas() {
     }).join('')}
     <div class="fg" style="margin-top:10px"><label class="fl">Asignar a</label>
       <select class="fi" id="ft-asig">
-        <option value="israel"${FT.meta.asig === 'israel' ? ' selected' : ''}>Israel</option>
-        <option value="jesus"${FT.meta.asig === 'jesus' ? ' selected' : ''}>Jesús</option>
+        ${muestristasDe(!!(APP.user && APP.user.demo)).map(u => `<option value="${es(u)}"${FT.meta.asig === u ? ' selected' : ''}>${es((USERS[u] || {}).nombre || u)}</option>`).join('')}
       </select></div>
     <div class="g2">
       <div class="fg"><label class="fl">OT (opcional)</label><input class="fi" id="ft-ot" value="${es(FT.meta.ot)}" placeholder="7735"></div>
@@ -413,7 +486,7 @@ export function wireFichaEvents() {
 let asignandoFT = false;
 
 export async function asignarDesdeFicha() {
-  if (!fsOk() || asignandoFT) return;
+  if (!fsOk() || asignandoFT || soloConsulta()) return;
   if (!FT.fichas.length) { toast('Primero sube el archivo de fichas técnicas', false); return; }
   asignandoFT = true;
   const btn = document.getElementById('ft-go');
@@ -462,7 +535,8 @@ export async function asignarDesdeFicha() {
       modelo: f0.modelo || codigos[0], cliente: f0.cliente || '',
       genero: '', talla: f0.talla || '', tipo_producto: f0.tipo_producto || '',
       tipo_pack: packFT,
-      asignado_a: gv('ft-asig') || 'israel',
+      demo: !!(APP.user && APP.user.demo),
+      asignado_a: gv('ft-asig') || muestristasDe(!!(APP.user && APP.user.demo))[0],
       notas: gv('ft-notas'), variantes, variante_codigos: codigos,
       pares_por_codigo: paresPorCodigoFT,
       estado: 'pendiente',
@@ -653,7 +727,7 @@ function renderVars() {
 let asignando = false;
 
 export async function asignar() {
-  if (!fsOk() || asignando) return;
+  if (!fsOk() || asignando || soloConsulta()) return;
   // Defensa en profundidad: el botón vive fuera de la vista en modo ficha
   // técnica (ver setMode). Si algo lo colara, se avisa en vez de callar: un
   // botón que no hace nada es imposible de diagnosticar desde piso.
@@ -708,6 +782,7 @@ export async function asignar() {
       modelo: mod, cliente: gv('l-cli'),
       genero: gv('l-gen'), talla: gv('l-tal'), tipo_producto: gv('l-tprod'), agujado: gv('l-ag'),
       tipo_pack: pack,
+      demo: !!(APP.user && APP.user.demo),
       asignado_a: gv('l-asig'),
       notas: gv('l-notas'), variantes, variante_codigos: variantes.map(v => v.codigo),
       pares_por_codigo: paresPorCodigo,
@@ -749,15 +824,18 @@ export async function asignar() {
 // aquí solo se recargan las capturas en proceso.
 export async function loadRev() {
   if (!fsOk()) return;
+  const ses = APP.sesion;
   try {
-    const snap2 = await db.collection('capturas').where('estado', 'in', ['activo', 'pausado', 'correccion']).get();
+    const snap2 = await enAmbiente(db.collection('capturas').where('estado', 'in', ['activo', 'pausado', 'correccion'])).get();
+    if (ses !== APP.sesion) return; // llegó tarde: ya entró otra persona
+    const docs2 = snap2.docs.filter(d => esDeMiAmbiente(d.data()));
     const el2 = document.getElementById('proc-list');
-    if (el2) el2.innerHTML = snap2.empty
+    if (el2) el2.innerHTML = docs2.length === 0
       ? '<div class="empty"><div class="ico">⏱</div><p>Sin capturas activas</p></div>'
-      : snap2.docs.map(d => {
+      : docs2.map(d => {
           const dt = d.data();
           return `<div class="card" data-proc="${es(d.id)}" style="cursor:pointer">
-            <div class="dt">${es(dt.modelo)} · <span class="vcod">${es(dt.codigo_variante)}</span>
+            <div class="dt">${es(dt.modelo)} · <span class="vcod">${es(dt.codigo_variante)}</span>${dt.demo ? ' <span class="bge bpend">DEMO</span>' : ''}
               ${dt.estado === 'correccion' ? '<span class="bge brd" style="margin-left:6px">🔁 en corrección</span>' : ''}</div>
             <div class="ds">${(USERS[dt.id_muestrista] || {}).nombre || es(dt.id_muestrista)} · ${fmtDate(dt.dt_inicio)}</div>
             <div class="mr"><span style="font-size:11px;color:var(--tx3)">${dt.folio ? es(dt.folio) + ' · ' : ''}Toca para ver la ficha</span><span style="color:var(--pri)">›</span></div>
@@ -771,7 +849,7 @@ export async function loadRev() {
 
 function renderRevCard(id, d) {
   return `<div class="card am">
-    <div class="dt">${es(d.modelo)} · <span class="vcod">${es(d.codigo_variante)}</span>${(d.iter || 1) > 1 ? ` <span class="bge bpend">iter ${es(d.iter)}</span>` : ''}</div>
+    <div class="dt">${es(d.modelo)} · <span class="vcod">${es(d.codigo_variante)}</span>${(d.iter || 1) > 1 ? ` <span class="bge bpend">iter ${es(d.iter)}</span>` : ''}${d.demo ? ' <span class="bge bpend">DEMO</span>' : ''}</div>
     <div class="ds">${(USERS[d.id_muestrista] || {}).nombre || es(d.id_muestrista)} · ${es(d.descripcion_variante)}</div>
     <div class="mr"><span>${d.folio ? es(d.folio) + ' · ' : ''}OT ${es(d.ot)}</span><span>${fmtDate(d.dt_fin)}</span></div>
     <button class="btn btn-am btn-sm" style="margin-top:10px;width:100%" data-rev="${es(id)}">📋 Ver y firmar</button>
@@ -861,7 +939,9 @@ export async function openRev(capturaId, readOnly = false, soloVer = false) {
       ${d.obs ? `<div class="fsec"><div class="ftitle">Observaciones</div><div style="font-size:13px">${es(d.obs)}</div></div>` : ''}
       ${esFirmaValida(d.firma_m) ? `<div class="fsec"><div class="ftitle">Firma muestrista</div><img src="${es(d.firma_m)}" alt="Firma muestrista" class="firma-img"></div>` : ''}
       ${readOnly && esFirmaValida(d.firma_l) ? `<div class="fsec"><div class="ftitle">Firma de aprobación (Lety)</div><img src="${es(d.firma_l)}" alt="Firma Lety" class="firma-img"></div>` : ''}
-      ${soloVer
+      ${APP.soloLectura
+        ? `<div class="al ali"><span>👔</span><span style="font-size:12px">Vista de consulta: esta ficha la revisa y firma Lety.</span></div>`
+        : soloVer
         ? `<div class="al ali"><span>⏱</span><span style="font-size:12px">El muestrista sigue capturando esta ficha. Aquí ves lo que lleva y la ficha técnica de referencia; podrás aprobarla cuando la firme.</span></div>`
         : readOnly
         ? `<button class="btn btn-bl" onclick="reabrirFicha()">🔓 Reabrir ficha (volver a pendiente)</button>`
@@ -916,6 +996,7 @@ async function renderComparacion(d, capId) {
 }
 
 export function aprobar() {
+  if (soloConsulta()) return;
   APP.sigData = { capturaId: APP.revCap, who: 'lety' };
   document.getElementById('ft').textContent = 'Firma de Lety — Aprobar';
   document.getElementById('fi-inst').innerHTML = '<span>✍️</span><span>Firma para aprobar y cerrar la ficha.</span>';
@@ -938,6 +1019,7 @@ async function transicion(capId, esperado, cambios) {
 }
 
 export function rechazar() {
+  if (soloConsulta()) return;
   confirmDlg(
     'Solicitar corrección',
     'La ficha regresará al muestrista para corregirla y su firma actual se descartará. ¿Continuar?',
@@ -964,6 +1046,7 @@ export function rechazar() {
 // Reabrir una ficha ya aprobada: vuelve a pendiente_lety (conserva la firma
 // del muestrista, descarta la aprobación)
 export function reabrirFicha() {
+  if (soloConsulta()) return;
   confirmDlg(
     'Reabrir ficha aprobada',
     'La ficha volverá a "pendiente de revisión" y se descartará tu firma de aprobación. ¿Continuar?',
@@ -1004,13 +1087,15 @@ let TAREAS = [];
 export async function loadTareas() {
   if (!fsOk()) return;
   const el = document.getElementById('tk-list');
+  const ses = APP.sesion;
   try {
     const quien = gv('tk-quien') || 'all';
     const filtro = gv('tk-estado') || 'abiertas';
-    let q = db.collection('desarrollos');
+    let q = enAmbiente(db.collection('desarrollos'));
     if (quien !== 'all') q = q.where('asignado_a', '==', quien);
     const snap = await q.get();
-    let docs = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+    if (ses !== APP.sesion) return; // llegó tarde: ya entró otra persona
+    let docs = snap.docs.filter(d => esDeMiAmbiente(d.data())).map(d => ({ id: d.id, data: d.data() }));
     if (filtro === 'abiertas') docs = docs.filter(d => !['terminado', 'cancelada'].includes(d.data.estado));
     else if (filtro === 'terminado') docs = docs.filter(d => d.data.estado === 'terminado');
     else if (filtro === 'cancelada') docs = docs.filter(d => d.data.estado === 'cancelada');
@@ -1032,7 +1117,7 @@ export async function loadTareas() {
             : '<span class="bge bpend">pendiente</span>';
           return '<div class="card" style="margin-bottom:8px">'
             + '<div style="display:flex;align-items:center;gap:8px">'
-            + '<span style="font-size:14px;font-weight:700;flex:1">' + es(d.modelo) + '</span>' + bge + '</div>'
+            + '<span style="font-size:14px;font-weight:700;flex:1">' + es(d.modelo) + (d.demo ? ' <span class="bge bpend">DEMO</span>' : '') + '</span>' + bge + '</div>'
             + '<div class="mr"><span>' + (es(d.cliente) || '—') + ' · '
             + ((USERS[d.asignado_a] || {}).nombre || es(d.asignado_a)) + '</span><span>'
             + es(n) + ' variante' + (n === 1 ? '' : 's') + '</span></div>'
@@ -1054,17 +1139,22 @@ export function backTarea() { scr('sL'); loadTareas(); }
 // Detalle: datos del pedido, variantes con su avance, y su ficha técnica
 export async function openTarea(devId) {
   if (!fsOk()) return;
+  const ses = APP.sesion;
   APP.tareaId = devId;
   const cont = document.getElementById('tk-body');
   scr('sT');
   cont.innerHTML = '<div class="empty"><div class="ico">⏳</div><p>Cargando…</p></div>';
   try {
-    const [devSnap, capsSnap, ftSnap] = await Promise.all([
+    const [devSnap, capsSnap, ftSnap, privSnap] = await Promise.all([
       db.collection('desarrollos').doc(devId).get(),
-      db.collection('capturas').where('id_desarrollo', '==', devId).get(),
+      enAmbiente(db.collection('capturas').where('id_desarrollo', '==', devId)).get(),
       db.collection('desarrollos_privado').doc(devId).collection('fichas_tecnicas').get(),
+      // La complejidad vive en el espejo privado (solo admin y Dirección la leen)
+      db.collection('desarrollos_privado').doc(devId).get().catch(() => null),
     ]);
-    if (APP.tareaId !== devId) return; // abrió otra mientras cargaba
+    const priv = privSnap && privSnap.exists ? privSnap.data() : {};
+    const cxCod = priv.complejidad_por_codigo || {};
+    if (APP.tareaId !== devId || ses !== APP.sesion) return; // abrió otra, o ya es otra sesión
     const d = devSnap.data();
     if (!d) { toast('Tarea no encontrada', false); scr('sL'); return; }
     APP.tareaDoc = d;
@@ -1084,8 +1174,10 @@ export async function openTarea(devId) {
       return ['sin iniciar', 'bpend'];
     };
     const cancelada = d.estado === 'cancelada';
-    // Los ajustes de pares solo tienen sentido mientras la tarea está viva
-    const editable = ['pendiente', 'en_proceso'].includes(d.estado);
+    // Los ajustes de pares solo tienen sentido mientras la tarea está viva, y
+    // nunca desde la cuenta de Dirección (solo consulta)
+    const editable = ['pendiente', 'en_proceso'].includes(d.estado) && !APP.soloLectura;
+    const ro = !!APP.soloLectura;
     const faltaOT = !String(d.ot || '').trim();
     const faltaPO = !String(d.po || '').trim();
     const faltaAg = !String(d.agujado || '').trim();
@@ -1099,7 +1191,7 @@ export async function openTarea(devId) {
       const ef = paresEfectivos(d, v.codigo);
       const ajustado = ppc[v.codigo] !== undefined && String(ppc[v.codigo]) !== String(v.pares_requeridos || '');
       return '<div class="vi" style="flex-wrap:wrap">'
-        + '<div style="flex:1;min-width:140px"><div class="vcod">' + es(v.codigo) + '</div>'
+        + '<div style="flex:1;min-width:140px"><div class="vcod">' + es(v.codigo) + (cxCod[v.codigo] ? ' <span class="bge" style="font-size:10px">' + es(cxCod[v.codigo]) + '</span>' : '') + '</div>'
         + '<div style="font-size:12px;color:var(--tx2)">' + (es(v.descripcion) || '—')
         + (ef ? ' · ' + es(ef) + ' pares' : '')
         + (ajustado ? ' <span class="bge bpend" style="font-size:10px">antes ' + (es(v.pares_requeridos) || '—') + '</span>' : '') + '</div></div>'
@@ -1129,7 +1221,7 @@ export async function openTarea(devId) {
       ? '<div class="al alr"><span>🗑</span><span style="font-size:12px"><strong>Tarea cancelada</strong> ' + fmtDate(d.cancelada_en) + ' por ' + ((USERS[d.cancelada_por] || {}).nombre || es(d.cancelada_por)) + ' — ' + es(d.cancelada_motivo) + '</span></div>'
         + (vivasBajoCancelada
             ? '<div class="al alw"><span>⚠️</span><span style="font-size:12px">' + vivasBajoCancelada + ' ficha' + (vivasBajoCancelada === 1 ? '' : 's') + ' de esta tarea sigue' + (vivasBajoCancelada === 1 ? '' : 'n') + ' viva' + (vivasBajoCancelada === 1 ? '' : 's') + ' (se creó o aprobó a la vez que se cancelaba).</span></div>'
-              + '<button class="btn btn-rd btn-sm" style="width:100%;margin-bottom:10px" onclick="repararCancelacion()">🗑 Cerrar fichas que quedaron vivas</button>'
+              + (ro ? '' : '<button class="btn btn-rd btn-sm" style="width:100%;margin-bottom:10px" onclick="repararCancelacion()">🗑 Cerrar fichas que quedaron vivas</button>')
             : '')
       : '';
 
@@ -1157,7 +1249,7 @@ export async function openTarea(devId) {
         }).join('') : ''}
       </div>`;
 
-    const completar = (!cancelada && (faltaOT || faltaPO || faltaAg))
+    const completar = (!cancelada && !ro && (faltaOT || faltaPO || faltaAg))
       ? '<div class="fsec"><div class="ftitle">Completar datos que faltaban</div>'
         + '<div class="al ali"><span>ℹ️</span><span style="font-size:12px">Solo se puede llenar lo que está vacío; lo ya capturado no se cambia.</span></div>'
         + '<div class="g2">'
@@ -1169,11 +1261,12 @@ export async function openTarea(devId) {
       : '';
 
     cont.innerHTML = avisoCancel + '<div class="card bl">'
-      + '<div class="dt">' + es(d.modelo) + (d.cliente ? ' · ' + es(d.cliente) : '') + '</div>'
+      + '<div class="dt">' + es(d.modelo) + (d.cliente ? ' · ' + es(d.cliente) : '') + (d.demo ? ' <span class="bge bpend">DEMO</span>' : '') + '</div>'
       + '<div class="ds">' + (cab || 'Sin datos de producto') + '</div>'
       + '<div class="mr"><span>' + ((USERS[d.asignado_a] || {}).nombre || es(d.asignado_a)) + '</span>'
       + '<span>' + (d.ot ? 'OT ' + es(d.ot) : 'sin OT') + (d.po ? ' · PO ' + es(d.po) : '') + '</span></div>'
       + '<div class="mr"><span>Creada ' + fmtDate(d.fecha_creacion) + '</span><span>' + es(d.estado) + '</span></div>'
+      + (priv.tipo_complejidad ? '<div class="mr"><span style="font-size:12px">🔒 Complejidad ' + es(priv.tipo_complejidad) + ' (solo la ves tú)</span><span></span></div>' : '')
       + (d.notas ? '<div class="mr"><span style="font-size:12px">📌 ' + es(d.notas) + '</span></div>' : '')
       + '</div>'
       + tiempos
@@ -1182,7 +1275,7 @@ export async function openTarea(devId) {
       + (editable ? '<div class="al ali" style="margin-bottom:8px"><span>✏️</span><span style="font-size:12px">Los pares requeridos se pueden ajustar: cambia el número y toca 💾. Queda registrado y el muestrista lo ve en su tarea.</span></div>' : '')
       + variantes
       + registro
-      + (cancelada ? '' : '<div class="fsec"><div class="ftitle">Agregar variante</div>'
+      + ((cancelada || ro) ? '' : '<div class="fsec"><div class="ftitle">Agregar variante</div>'
       + '<div class="al ali"><span>➕</span><span style="font-size:12px">Para cuando el cliente pide más colores o derecho e izquierdo sobre una tarea ya empezada. Las variantes que ya existen no se tocan.</span></div>'
       + '<div class="g2">'
       + '<div class="fg"><label class="fl">Código</label><input class="fi" id="tk-vc" placeholder="2798"></div>'
@@ -1249,7 +1342,7 @@ let guardandoTarea = null; // devId en curso
 
 // Completa OT / PO / agujado. Las reglas solo aceptan pasar de vacío a lleno.
 export async function guardarDatosTarea() {
-  if (!fsOk() || !APP.tareaId) return;
+  if (!fsOk() || !APP.tareaId || soloConsulta()) return;
   if (guardandoTarea) { toast('Espera: se está guardando la tarea anterior', false); return; }
   const cambios = {};
   const ot = gv('tk-ot').trim(), po = gv('tk-po').trim(), ag = gv('tk-ag').trim();
@@ -1272,7 +1365,7 @@ export async function guardarDatosTarea() {
     if (cambios.agujado) propaga.agujado = cambios.agujado;
     if (Object.keys(propaga).length) {
       try {
-        const caps = await db.collection('capturas').where('id_desarrollo', '==', devId).get();
+        const caps = await enAmbiente(db.collection('capturas').where('id_desarrollo', '==', devId)).get();
         // El agujado vive también en el formulario del muestrista: si se lo
         // rellenamos a una ficha que él tiene abierta, su próximo "guardar"
         // lo revertiría al valor de su pantalla. Por eso solo se rellena en
@@ -1323,7 +1416,7 @@ let agregandoVar = null; // devId en curso
 // Firestore no sabe insertar en un array de objetos; las reglas exigen que los
 // códigos viejos sigan TODOS presentes, así que no se puede perder ninguno.
 export async function agregarVariante() {
-  if (!fsOk() || !APP.tareaId) return;
+  if (!fsOk() || !APP.tareaId || soloConsulta()) return;
   if (agregandoVar) { toast('Espera: se está agregando otra variante', false); return; }
   const cod = normalizarCodigo(gv('tk-vc'));
   if (!cod) { toast('Escribe el código de la variante', false); return; }
@@ -1398,7 +1491,7 @@ let cambiandoPares = null;
 // a media marcha). Queda en el mapa `pares_por_codigo`, en el registro
 // `cambios`, y se propaga a las fichas de ese código que aún no se aprobaron.
 async function cambiarPares(idx) {
-  if (!fsOk() || !APP.tareaId) return;
+  if (!fsOk() || !APP.tareaId || soloConsulta()) return;
   if (cambiandoPares) { toast('Espera: se está guardando otro cambio', false); return; }
   const d = APP.tareaDoc || {};
   const v = (d.variantes || [])[idx];
@@ -1430,7 +1523,7 @@ async function cambiarPares(idx) {
     // que se les pidió al firmar: el valor vigente vive en la tarea.
     let n = 0;
     try {
-      const caps = await db.collection('capturas').where('id_desarrollo', '==', devId).get();
+      const caps = await enAmbiente(db.collection('capturas').where('id_desarrollo', '==', devId)).get();
       const pend = caps.docs.filter(c => c.data().codigo_variante === cod
         && ['activo', 'pausado', 'correccion'].includes(c.data().estado)
         && String(c.data().pares_requeridos || '') !== nuevo);
@@ -1456,7 +1549,7 @@ async function cambiarPares(idx) {
 
 // ── Cancelar tarea (borrado lógico, con motivo) ──
 export function cancelarTarea() {
-  if (!APP.tareaId) return;
+  if (!APP.tareaId || soloConsulta()) return;
   const el = document.getElementById('can-motivo');
   if (el) el.value = '';
   openOvl('ocan');
@@ -1465,7 +1558,7 @@ export function cancelarTarea() {
 let cancelando = null;
 
 export async function confirmarCancelarTarea() {
-  if (!fsOk() || !APP.tareaId) return;
+  if (!fsOk() || !APP.tareaId || soloConsulta()) return;
   if (cancelando) return;
   const motivo = gv('can-motivo').trim();
   if (motivo.length < 5) { toast('Escribe el motivo (al menos 5 letras)', false); return; }
@@ -1482,7 +1575,7 @@ export async function confirmarCancelarTarea() {
     // firmadas que esperaban revisión: si se quedaran, seguirían en la cola y
     // en el dashboard (su firma se conserva como evidencia). Las aprobadas
     // son historia y no se tocan.
-    const caps = await db.collection('capturas').where('id_desarrollo', '==', devId).get();
+    const caps = await enAmbiente(db.collection('capturas').where('id_desarrollo', '==', devId)).get();
     const abiertas = caps.docs.filter(c => ['activo', 'pausado', 'correccion', 'pendiente_lety'].includes(c.data().estado));
     if (abiertas.length > 400) { toast('Demasiadas fichas para cancelar de una vez — avísale a Roberto', false); return; }
     const batch = db.batch();
@@ -1548,7 +1641,7 @@ async function cerrarRezagadas(devId) {
   for (let ronda = 0; ronda < 3; ronda++) {
     let vivas = [];
     try {
-      const snap = await db.collection('capturas').where('id_desarrollo', '==', devId).get();
+      const snap = await enAmbiente(db.collection('capturas').where('id_desarrollo', '==', devId)).get();
       vivas = snap.docs.filter(c => ['activo', 'pausado', 'correccion', 'pendiente_lety'].includes(c.data().estado));
     } catch (e) { console.error('repaso de cancelación:', e); pendientes = -1; break; }
     pendientes = 0;
@@ -1574,7 +1667,7 @@ async function cerrarRezagadas(devId) {
 // Botón de la tarea cancelada: vuelve a intentar cerrar lo que quedó vivo.
 let reparando = null;
 export async function repararCancelacion() {
-  if (!fsOk() || !APP.tareaId || reparando) return;
+  if (!fsOk() || !APP.tareaId || reparando || soloConsulta()) return;
   const devId = APP.tareaId;
   reparando = devId;
   try {

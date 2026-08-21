@@ -40,12 +40,18 @@ function watchConnection() {
 }
 
 let pinging = false;
-function pingFS(silent) {
+export function pingFS(silent) {
   // Las reglas de Firestore exigen sesión: sin usuario autenticado el ping
   // fallaría con permission-denied y ensuciaría el indicador de conexión.
   if (!db || !auth || !auth.currentUser || pinging) return;
   pinging = true;
-  db.collection('_ping').doc('test').set({ ts: Date.now() })
+  // Dirección (solo consulta) no escribe ni el ping: lee el mismo documento
+  // del servidor. Para los demás sigue siendo una escritura, que además
+  // verifica que las reglas están desplegadas.
+  const op = APP.soloLectura
+    ? db.collection('_ping').doc('test').get({ source: 'server' })
+    : db.collection('_ping').doc('test').set({ ts: Date.now() });
+  op
     .then(() => setConn('ok', 'En línea'))
     .catch(e => {
       if (e.code === 'permission-denied') {
@@ -96,7 +102,10 @@ function initFB() {
         primerCheckAuth = false;
         if (user && !APP.user) { auth.signOut().catch(() => {}); return; }
       }
-      if (user) pingFS();
+      // Solo cuando la app ya sabe QUIÉN entró (login() fija APP.user y
+      // soloLectura): antes, el ping del CEO intentaría escribir y pintaría
+      // "Reglas Firestore" en rojo sin que nada esté mal. login() llama pingFS.
+      if (user && APP.user) pingFS();
     });
   } catch (e) {
     fbSt('🔴 Error inicializando Firebase: ' + e.message, 'var(--rd)');

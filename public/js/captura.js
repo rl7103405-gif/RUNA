@@ -90,7 +90,10 @@ async function createCap(devId, cod) {
     // captura + cambio de estado del desarrollo, todo atómico. Las refs se
     // crean FUERA del callback; el callback solo lee/calcula/escribe (puede
     // reintentarse si otro dispositivo incrementa el contador a la vez).
-    const counterRef = db.collection('contadores').doc('capturas');
+    // Las fichas de prueba llevan su propio consecutivo (FD-) y no queman el
+    // real (FP-). Las reglas exigen exactamente esto según el ambiente.
+    const demo = !!(APP.user && APP.user.demo);
+    const counterRef = db.collection('contadores').doc(demo ? 'capturas_demo' : 'capturas');
     const capRef = db.collection('capturas').doc();
     const devRef = db.collection('desarrollos').doc(devId);
     await db.runTransaction(async tx => {
@@ -113,7 +116,8 @@ async function createCap(devId, cod) {
       // puede crear DOS capturas con el mismo folio_seq (pentest 2026-08-20).
       tx.set(counterRef, { seq, last_cap_id: capRef.id });
       tx.set(capRef, {
-        folio: 'FP-' + String(seq).padStart(5, '0'), folio_seq: seq,
+        folio: (demo ? 'FD-' : 'FP-') + String(seq).padStart(5, '0'), folio_seq: seq,
+        demo,
         id_desarrollo: devId, id_muestrista: APP.user.id,
         codigo_variante: cod, descripcion_variante: v.descripcion || '',
         pares_requeridos: paresVig, tipo_pack: dd.tipo_pack || v.tipo_pack || '',

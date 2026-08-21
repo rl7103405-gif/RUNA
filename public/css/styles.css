@@ -79,7 +79,9 @@ html,body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-syst
 .rbA{font-size:11px;font-weight:700;padding:2px 10px;border-radius:999px;background:var(--pu-bg);color:var(--pu)}
 .rbM{font-size:11px;font-weight:700;padding:2px 10px;border-radius:999px;background:var(--bl-bg);color:var(--bl)}
 /* LOGIN / PIN */
-.lwrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px;gap:12px}
+.lwrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px;gap:12px;overflow-y:auto}
+#s0 .lwrap{justify-content:flex-start;padding-top:max(24px,env(safe-area-inset-top))}
+#s0 .lcard{margin-top:auto;margin-bottom:auto}
 .lcard{background:var(--s1);border:1px solid var(--b1);border-radius:16px;box-shadow:var(--sombra);padding:22px;width:100%;max-width:340px}
 .ubtn{background:var(--s1);border:1px solid var(--b2);border-radius:var(--r);padding:14px 16px;min-height:52px;display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:10px;width:100%;font-family:inherit;color:var(--tx);text-align:left;transition:border-color .15s,background .1s}
 .ubtn:last-child{margin-bottom:0}
