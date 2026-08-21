@@ -244,9 +244,11 @@ service cloud.firestore {
                     && esMuestristaId(request.resource.data.asignado_a)
                     // Ambiente: la tarea nace marcada como su creador, y se
                     // asigna a un muestrista del mismo ambiente
-                    && 'demo' in request.resource.data
-                    && request.resource.data.demo is bool
-                    && request.resource.data.demo == esDemo()
+                    // Una app en caché (versión anterior) no manda `demo`: para una
+                    // cuenta REAL cuenta como false; la de prueba sí debe mandarlo
+                    && (('demo' in request.resource.data)
+                          ? (request.resource.data.demo is bool && request.resource.data.demo == esDemo())
+                          : !esDemo())
                     && asignadoEnAmbiente(request.resource.data.asignado_a)
                     && request.resource.data.estado == 'pendiente'
                     && !('tipo_complejidad' in request.resource.data)
@@ -541,9 +543,11 @@ service cloud.firestore {
                     && request.resource.data.estado == 'activo'
                     // Ambiente: la ficha nace marcada como su dueño, sobre una
                     // tarea del mismo ambiente
-                    && 'demo' in request.resource.data
-                    && request.resource.data.demo is bool
-                    && request.resource.data.demo == esDemo()
+                    // Una app en caché (versión anterior) no manda `demo`: para una
+                    // cuenta REAL cuenta como false; la de prueba sí debe mandarlo
+                    && (('demo' in request.resource.data)
+                          ? (request.resource.data.demo is bool && request.resource.data.demo == esDemo())
+                          : !esDemo())
                     && mismoAmbiente(devDeCaptura(request.resource.data.id_desarrollo))
                     // Forma fija: ningún campo inventado, y nace en cero.
                     && request.resource.data.keys().hasOnly(camposCaptura())
