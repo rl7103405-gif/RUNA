@@ -4,28 +4,27 @@ Lo que se pidió o se ocurrió y **no** se va a hacer en la sesión en curso. Un
 feature por sesión; lo demás vive aquí hasta que le toque. Cada entrada dice
 quién lo pidió, cuándo y el porqué, para no rediseñarlo desde cero después.
 
-## Tareas programadas: "asignar para el día tal" (Lety, 2026-08-21)
+## Itinerario: tareas con fecha, visibles desde que se asignan (Lety + Roberto, 2026-08-21)
 
-Lety quiere dejar tareas asignadas que **no les aparezcan a los muestristas
-hasta una fecha** (mañana en la mañana, el lunes, toda la semana), para poder
-cargar trabajo por adelantado cuando no va a estar, sin que se les vea como
-más carga hoy. Opcional una **fecha de término** ("que acaben el día tal"). Si
-no se pone fecha, se asigna como hoy.
+Lety quiere poder dejar tareas para días futuros (mañana en la mañana, el
+lunes, toda la semana) cuando no va a estar, sin que se les vea a los
+muestristas como un montón de carga de hoy. Primera idea: ocultarlas hasta la
+fecha. **Roberto la cambió el mismo día**: mejor que les aparezcan desde que se
+asignan, pero como **itinerario** — "tus próximas tareas" con su fecha — y así
+no hay estados escondidos ni sorpresas.
 
-Diseño mínimo pensado (no implementado):
-- `desarrollos.visible_desde` (Timestamp, medianoche local del día elegido) y
-  `fecha_limite` opcional. Ambos los escribe Lety al asignar y los puede mover
-  mientras la tarea siga `pendiente` (rama nueva en reglas; no después de que
-  el muestrista la tomó).
-- Muestrista: su lista filtra `visible_desde <= ahora` (cliente); la **regla
-  de crear captura** exige `request.time >= visible_desde` para que no se
-  pueda arrancar antes ni desde la consola.
-- Lety: badge "programada para el lun 25" en Tareas; vencida = badge rojo
-  (informativo, sin bloquear).
-- KPIs no cambian: el tiempo de la tarea sigue contando desde la primera
-  captura, no desde la fecha programada.
-- Pendiente de decidir: si al muestrista se le avisa el día que aparece
-  (hoy no hay notificaciones; con que aparezca en su lista basta).
+Diseño mínimo (no implementado):
+- `desarrollos.fecha_programada` (Timestamp, medianoche local del día elegido)
+  y `fecha_limite` opcional; Lety los pone al asignar (vacío = hoy, como
+  siempre) y los puede mover mientras la tarea siga `pendiente`.
+- Muestrista: su lista se parte en **Hoy / Atrasadas** (fecha ≤ hoy) y
+  **Próximas** (fecha futura, ordenadas por día, con el día visible). Puede
+  empezar una próxima si quiere (está ocioso): no se bloquea nada, es
+  itinerario, no candado.
+- Lety: en Tareas, badge con la fecha; vencida = badge rojo informativo.
+- KPIs sin cambio: el tiempo de la tarea cuenta desde la primera captura.
+- Nada de reglas nuevas salvo permitir que Lety escriba/mueva esas dos fechas
+  (campos nuevos en `create` y una rama de `update` mientras esté pendiente).
 
 ## Consumo por media docena en la ficha (Lety, 2026-08-21, dictado corrido)
 
