@@ -149,3 +149,61 @@ table.mt input:focus{background:var(--pri-bg)}
 #toast{position:fixed;top:max(14px, env(safe-area-inset-top));right:14px;background:var(--tx);color:#fff;border-radius:var(--r2);padding:12px 16px;font-size:13px;font-weight:600;z-index:200;display:none;max-width:min(340px, calc(100vw - 28px));pointer-events:none;box-shadow:0 6px 20px rgba(15,23,42,.25);border-left:4px solid var(--gn-full);animation:toastIn .22s ease}
 @keyframes toastIn{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ESCRITORIO — más datos a la vez, al estilo de [[app-captura-mecanicos]]
+   (2026-08-24, pedido de Roberto: "todo está muy grande, no puedo ver
+   tantos datos a la vez").
+   Solo aplica con ratón y pantalla ancha: `pointer:fine` deja INTACTAS
+   las tabletas y los teléfonos de piso, donde los blancos de 44-52 px se
+   tocan con el dedo y son una regla dura del proyecto.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (min-width:900px) and (pointer:fine){
+  /* El contenido deja de estirarse a lo ancho de un monitor de 24" */
+  .body{padding:16px 22px 76px}
+  .body>.tp{max-width:1180px;margin:0 auto}
+  .hdr{min-height:44px;padding:8px 20px}
+  .hdr h1{font-size:14px}
+  .bnav{height:48px}
+  .nb{font-size:10.5px}
+  .nb .ico{font-size:16px}
+
+  /* Tipografía y blancos más apretados */
+  .fi{font-size:13.5px;padding:8px 11px;border-radius:8px}
+  .fg{margin-bottom:9px}
+  .fl{font-size:10px;margin-bottom:3px}
+  .card{padding:11px 13px;margin-bottom:9px;border-radius:10px}
+  .fsec{padding:12px 14px;margin-bottom:10px;border-radius:10px}
+  .ftitle,.stitle{font-size:10px;margin-bottom:8px}
+  .dt{font-size:13.5px}
+  .ds,.mr{font-size:11.5px}
+  .al{padding:8px 10px;font-size:12px;margin-bottom:8px}
+  .vi{padding:7px 10px;margin-bottom:6px;gap:8px}
+  .vcod{font-size:12px}
+  .bge{font-size:9.5px;padding:2px 7px}
+  .btn{min-height:38px;padding:9px 14px;font-size:13.5px;margin-bottom:7px}
+  .btn-sm{min-height:32px;padding:6px 11px;font-size:12px}
+  .ms-btn{min-height:40px;padding:9px 8px;font-size:12.5px}
+  .timer{font-size:28px;padding:4px 0}
+  .empty{padding:26px 20px}
+  table.mt{font-size:12px}
+  table.mt input{font-size:13px;padding:4px 2px}
+  table.mt td.lbl{font-size:10.5px;padding:5px 7px}
+
+  /* Los datos del pedido en dos columnas: la mitad de alto */
+  #form-datos,#form-single{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;align-items:start}
+  #form-datos>.ftitle,#form-single>.ftitle{grid-column:1/-1}
+  #form-datos>.fg:last-child,#form-single>.fg:last-child{grid-column:1/-1}
+
+  /* Las listas de tarjetas se acomodan en rejilla: se ven varias de un golpe */
+  #pend-list,#proc-list,#tk-list,#db-list,#activas-list,#tareas-list,#mhl,#pausas-list{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px;align-items:start}
+  #pend-list>.card,#proc-list>.card,#tk-list>.card,#db-list>.card,
+  #activas-list>.card,#tareas-list>.card,#mhl>.card,#pausas-list>.card{margin-bottom:0}
+  #pend-list>.empty,#proc-list>.empty,#tk-list>.empty,#db-list>.empty,
+  #activas-list>.empty,#tareas-list>.empty,#mhl>.empty,#pausas-list>.empty,
+  #pausas-list>.al{grid-column:1/-1}
+
+  /* El detalle de una ficha o tarea se lee mejor en una columna angosta */
+  #tk-body,#rbody,#cbody{max-width:860px;margin:0 auto}
+}

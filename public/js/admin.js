@@ -68,7 +68,9 @@ export async function reconciliarEstadoTarea(devId) {
 }
 
 export function ltTab(i, btn) {
-  if (APP.soloLectura && (i === 0 || i === 3)) return; // Dirección no asigna ni configura
+  // Dirección (el papá de Roberto) solo mira cómo van las tareas y el
+  // dashboard: no asigna, no revisa fichas y no configura.
+  if (APP.soloLectura && i !== 4 && i !== 2) return;
   if (APP.user && APP.user.demo && i === 3) return;     // el catálogo es del ambiente real
   [0, 1, 2, 3, 4].forEach(j => { const e = document.getElementById('lt' + j); if (e) e.classList.remove('on'); });
   document.getElementById('lt' + i).classList.add('on');
@@ -125,15 +127,16 @@ function aplicarAmbiente() {
   // Título: que se note en qué ambiente y modo se está
   const h = document.getElementById('sL-title');
   if (h) h.textContent = (APP.user ? APP.user.nombre : 'Lety') + ' — ' + (ro ? 'Dirección · solo consulta' : demo ? 'PRUEBAS (nada de esto es real)' : 'Administración');
-  // Dirección: sin Asignar ni Config; arranca en el Dashboard
+  // Dirección: solo Tareas y Dashboard. Ni Asignar, ni Revisar, ni Config.
   const na = document.getElementById('nav-asignar'); if (na) na.style.display = ro ? 'none' : '';
+  const nr = document.getElementById('nav-revisar'); if (nr) nr.style.display = ro ? 'none' : '';
   // Config (catálogo, PINs) es del ambiente REAL: ni Dirección ni las cuentas
   // de prueba lo tocan (las reglas niegan la importación al demo)
   const nc = document.getElementById('nav-config'); if (nc) nc.style.display = (ro || demo) ? 'none' : '';
   // Cada sesión arranca en su pestaña inicial, no en la que dejó la anterior
   // (una tablet compartida podía quedarse en Config o en el Dashboard de otro)
-  const inicial = ro ? document.getElementById('nav-dashboard') : document.getElementById('nav-asignar');
-  if (inicial) ltTab(ro ? 2 : 0, inicial);
+  const inicial = ro ? document.getElementById('nav-tareas') : document.getElementById('nav-asignar');
+  if (inicial) ltTab(ro ? 4 : 0, inicial);
   if (!ro) { resetAsignar(); setMode('single'); }
 }
 
@@ -291,6 +294,8 @@ async function decidirPausa(pausaId, aprobar) {
 export function setBadgePendientes(n, pausas) {
   const b = document.getElementById('nav-pend');
   if (!b) return;
+  // El contador es de cosas por DECIDIR: Dirección no decide nada
+  if (APP.soloLectura) { b.style.display = 'none'; return; }
   // El contador junta lo que espera decisión de Lety: fichas por revisar y
   // pausas por autorizar (estas último urgen: el cronómetro sigue corriendo).
   // Solo las pausas de MI ambiente (las de fichas aún no consultadas no cuentan)
@@ -868,7 +873,8 @@ export async function openRev(capturaId, readOnly = false, soloVer = false) {
     const d = snap.data();
     if (!d) { toast('Ficha no encontrada', false); return; }
     APP.revFolio = d.folio || null; // para la pantalla de éxito al aprobar
-    document.getElementById('rtitle').textContent = soloVer ? 'Ficha en proceso'
+    document.getElementById('rtitle').textContent = APP.soloLectura ? 'Ficha (consulta)'
+      : soloVer ? 'Ficha en proceso'
       : readOnly ? 'Ficha aprobada' : 'Revisar ficha práctica';
     // TEN calculado desde Firestore, no desde timers en memoria
     const tn = tenFromDoc(d);
@@ -1698,7 +1704,12 @@ export async function repararCancelacion() {
   } finally { reparando = null; }
 }
 
-export function backRev() { scr('sL'); loadRev(); }
+export function backRev() {
+  scr('sL');
+  // Dirección no tiene pestaña Revisar: llega a una ficha desde el Dashboard
+  if (APP.soloLectura) { loadDB(); return; }
+  loadRev();
+}
 
 // Delegación de eventos para listas dinámicas de Lety
 export function wireAdminEvents() {
