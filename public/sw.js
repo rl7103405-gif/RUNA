@@ -3,7 +3,7 @@
 // v5: catálogo importable desde Excel, exportación a .xlsx y contador de
 // pendientes. SheetJS/ExcelJS NO se precachean (pesan ~1 MB cada una): se
 // descargan solo cuando Lety usa esas funciones y quedan en cache de runtime.
-const CACHE = 'quini-muestristas-v17';
+const CACHE = 'quini-muestristas-v18';
 
 const APP_SHELL = [
   './',
@@ -37,12 +37,19 @@ const CDN_ASSETS = [
   'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js',
 ];
 
+// `cache: 'reload'` obliga a ir a la RED y saltarse el caché del navegador.
+// Sin esto, al instalarse una versión nueva se guardaba lo que el navegador
+// tuviera guardado de antes (el hosting sirve el JS con max-age=3600), y la
+// app se quedaba corriendo código viejo aunque el servidor ya tuviera el
+// nuevo. Fue la causa de los "no acepta la ficha" del 2026-08-24.
+const desdeLaRed = u => new Request(u, { cache: 'reload' });
+
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await cache.addAll(APP_SHELL);
+    await cache.addAll(APP_SHELL.map(desdeLaRed));
     // Los CDN pueden fallar sin bloquear la instalación
-    await Promise.allSettled(CDN_ASSETS.map(u => cache.add(u)));
+    await Promise.allSettled(CDN_ASSETS.map(u => cache.add(desdeLaRed(u))));
     self.skipWaiting();
   })());
 });
@@ -78,15 +85,32 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Resto (css/js/fuentes/CDN): cache primero, con actualización en segundo plano
+  // El código de la app (nuestro css/js): RED PRIMERO, caché como respaldo.
+  // Sin red la app no sirve de todas formas (los datos viven en Firestore),
+  // así que la caché aquí es para el arranque offline, no para ahorrar: lo que
+  // importa es que una corrección publicada llegue en la siguiente carga y no
+  // hasta que al navegador se le venza su propio caché.
+  const esCodigoPropio = url.origin === location.origin
+    && (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.webmanifest'));
+
   e.respondWith((async () => {
-    const cached = await caches.match(e.request);
-    const fetchAndUpdate = fetch(e.request).then(res => {
+    const guardar = res => {
       if (res && (res.status === 200 || res.type === 'opaque')) {
         caches.open(CACHE).then(c => c.put(e.request, res.clone())).catch(() => {});
       }
       return res;
-    }).catch(() => null);
-    return cached || (await fetchAndUpdate) || Response.error();
+    };
+    if (esCodigoPropio) {
+      try {
+        return guardar(await fetch(e.request));
+      } catch (err) {
+        return (await caches.match(e.request)) || Response.error();
+      }
+    }
+    // Íconos y librerías de CDN (pesadas y con versión en la URL): caché
+    // primero, con actualización en segundo plano.
+    const cached = await caches.match(e.request);
+    const enRed = fetch(e.request).then(guardar).catch(() => null);
+    return cached || (await enRed) || Response.error();
   })());
 });

@@ -8,6 +8,16 @@
     ],
     "headers": [
       {
+        "_comment": "El codigo de la app se revalida siempre: sin esto el navegador lo guarda una hora y el service worker precachea esa copia vieja (2026-08-24)",
+        "source": "**/*.@(js|css|html)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
         "source": "/sw.js",
         "headers": [
           {
