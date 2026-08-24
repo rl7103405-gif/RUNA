@@ -126,7 +126,10 @@ function aplicarAmbiente() {
   pinta('tk-quien', true, demo ? 'Todos (demo)' : 'Los dos');
   // Título: que se note en qué ambiente y modo se está
   const h = document.getElementById('sL-title');
-  if (h) h.textContent = (APP.user ? APP.user.nombre : 'Lety') + ' — ' + (ro ? 'Dirección · solo consulta' : demo ? 'PRUEBAS (nada de esto es real)' : 'Administración');
+  if (h) h.textContent = (APP.user ? APP.user.nombre : 'Lety') + ' — ' + (ro ? 'Solo consulta' : demo ? 'PRUEBAS (nada de esto es real)' : 'Administración');
+  // La etiqueta del rol decía "Admin" también para Dirección
+  const rb = document.getElementById('sL-rol');
+  if (rb) rb.textContent = ro ? 'Consulta' : demo ? 'Prueba' : 'Admin';
   // Dirección: solo Tareas y Dashboard. Ni Asignar, ni Revisar, ni Config.
   const na = document.getElementById('nav-asignar'); if (na) na.style.display = ro ? 'none' : '';
   const nr = document.getElementById('nav-revisar'); if (nr) nr.style.display = ro ? 'none' : '';
@@ -1127,10 +1130,10 @@ export async function loadTareas() {
             + '<div class="mr"><span>' + (es(d.cliente) || '—') + ' · '
             + ((USERS[d.asignado_a] || {}).nombre || es(d.asignado_a)) + '</span><span>'
             + es(n) + ' variante' + (n === 1 ? '' : 's') + '</span></div>'
-            + '<div class="mr"><span>' + (d.ot ? 'OT ' + es(d.ot) : '') + (d.po ? ' · PO ' + es(d.po) : '')
+            + '<div class="mr"><span>' + [d.ot ? 'OT ' + es(d.ot) : '', d.po ? 'PO ' + es(d.po) : ''].filter(Boolean).join(' · ')
             + (falta.length ? ' <span class="bge bpend">falta ' + es(falta.join(' y ')) + '</span>' : '')
             + '</span><span>' + fmtDate(d.fecha_creacion) + '</span></div>'
-            + '<button class="btn btn-bl btn-sm" style="margin-top:8px;width:100%" data-tarea="' + es(id) + '">' + (d.estado === 'cancelada' ? '📋 Ver' : '📋 Ver y ampliar') + '</button>'
+            + '<button class="btn btn-bl btn-sm" style="margin-top:8px;width:100%" data-tarea="' + es(id) + '">' + ((d.estado === 'cancelada' || APP.soloLectura) ? '📋 Ver' : '📋 Ver y ampliar') + '</button>'
             + '</div>';
         }).join('');
   } catch (e) {

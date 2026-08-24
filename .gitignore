@@ -29,3 +29,7 @@ Thumbs.db
 
 # Credenciales generadas por scripts/crear_cuentas.cjs (temporal, lo consume el Excel)
 scripts/.cuentas-nuevas.json
+
+# Capturas de verificacion de Playwright
+.playwright-mcp/
+*.png
