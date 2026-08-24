@@ -554,7 +554,14 @@ service cloud.firestore {
                     && request.resource.data.elapsed_seg == 0
                     && request.resource.data.tm_seg == 0
                     && request.resource.data.get('iter', 1) == 1
-                    && request.resource.data.dt_inicio == request.time
+                    // OJO: aqui NO va `== request.time`. La ficha nace dentro de una
+                    // TRANSACCION (folio + captura + estado de la tarea), y ahi el
+                    // serverTimestamp se resuelve al CONFIRMAR mientras `request.time`
+                    // es la hora en que llego la peticion: nunca son iguales y la
+                    // regla rechazaba TODAS las fichas. Roto del 2026-08-21 al 24.
+                    // `<=` conserva lo que importa: que no se pueda fechar en el futuro.
+                    && request.resource.data.dt_inicio is timestamp
+                    && request.resource.data.dt_inicio <= request.time
                     && request.resource.data.get('dt_fin', null) == null
                     // Los datos del pedido se COPIAN de la tarea, no se
                     // declaran: antes un muestrista podía nacer su ficha con
