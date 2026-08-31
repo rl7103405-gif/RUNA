@@ -43,6 +43,15 @@ export const DIAS_NOVEDAD_INICIAL = 30;
 
 export const NOVEDADES = [
   {
+    id: '2026-08-31-03',
+    fecha: '2026-08-31',
+    tipo: 'mejorado',
+    titulo: 'Refuerzo de seguridad',
+    detalle: 'Reforzamos por dentro los candados que protegen la información: quién puede '
+      + 'ver y cambiar cada ficha. No cambia nada de lo que ves ni de cómo trabajas; es una '
+      + 'mejora interna para que los datos estén más protegidos.',
+  },
+  {
     id: '2026-08-31-02',
     fecha: '2026-08-31',
     tipo: 'nuevo',
