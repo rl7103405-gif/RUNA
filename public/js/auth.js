@@ -6,6 +6,7 @@ import { scr, toast, gv, openOvl, closeOvl } from './utils.js';
 import { clearAllTimers } from './timers.js';
 import { initMuestrista } from './muestrista.js';
 import { initLety, setBadgePendientes, invalidarLookups, limpiarCacheAdmin, resetAsignar } from './admin.js';
+import { refrescaCampana } from './novedades.js';
 
 export function selectUser(uid) {
   APP.pinTarget = uid;
@@ -136,6 +137,7 @@ export function login(uid, rol, perfil) {
   if (rol === 'admin' || rol === 'ceo') { initLety(); scr('sL'); }
   else { initMuestrista(); scr('sM'); }
   pingFS(); // el indicador de conexión arranca ya sabiendo el modo (lectura o escritura)
+  refrescaCampana(); // la marca de leído es de ESTA persona, no de la anterior
   // Vigila el propio perfil para cortar la sesión en vivo si Lety desactiva
   // esta cuenta mientras la tablet ya está abierta (si no, sigue con la UI y
   // los timers corriendo hasta que falle un guardado sin explicación). Se
@@ -162,6 +164,7 @@ export function logout() {
   APP.user = null;
   APP.soloLectura = false;
   limpiarCacheAdmin();
+  refrescaCampana();
   resetAsignar(); // lo escrito sin enviar no le aparece a la siguiente cuenta
   // "Otros accesos" vuelve a plegarse: la pantalla de la tablet es la de siempre
   const ot = document.getElementById('otros-toggle'); if (ot) ot.style.display = '';

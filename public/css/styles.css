@@ -207,3 +207,19 @@ table.mt input:focus{background:var(--pri-bg)}
   /* El detalle de una ficha o tarea se lee mejor en una columna angosta */
   #tk-body,#rbody,#cbody{max-width:860px;margin:0 auto}
 }
+
+/* ── Campana de Novedades ── */
+.camp{position:relative;background:none;border:none;font-size:18px;line-height:1;cursor:pointer;padding:4px 6px;flex-shrink:0}
+.camp-globo{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--rd-full);color:#fff;font-size:9.5px;font-weight:800;line-height:16px;text-align:center;font-family:inherit}
+.nov{border-left:3px solid var(--b2);padding:2px 0 10px 10px;margin-bottom:12px}
+.nov-cab{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.nov-tipo{color:#fff;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:2px 8px;border-radius:999px}
+.nov-fecha{font-size:11px;color:var(--tx3)}
+.nov-tit{font-size:14px;font-weight:700;margin-bottom:3px}
+.nov-det{font-size:12.5px;color:var(--tx2);line-height:1.45}
+@media (min-width:900px) and (pointer:fine){
+  .msheet{max-width:640px;border-radius:16px;margin:auto}
+  .ovl{align-items:center}
+  .nov-tit{font-size:13.5px}
+  .nov-det{font-size:12px}
+}

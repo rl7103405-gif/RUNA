@@ -17,6 +17,17 @@ export const USERS = {
   demo_muestrista: { nombre: 'Demo · muestrista', rol: 'muestrista', ico: '🧪', demo: true },
 };
 
+// Agujados (número de agujas) que existen en planta. Estaba repetida en tres
+// lugares (el alta, el detalle de tarea y la ficha práctica): si falta uno, esa
+// máquina no se puede capturar — pasó con el 168 el 2026-08-31. Un solo lugar.
+export const AGUJADOS = ['108', '120', '132', '144', '168', '200'];
+
+// <option> de agujado, marcando el que ya trae el documento
+export function opcionesAgujado(sel) {
+  return '<option value="">— elegir —</option>'
+    + AGUJADOS.map(n => '<option' + (String(sel || '') === n ? ' selected' : '') + '>' + n + '</option>').join('');
+}
+
 // Quiénes pueden recibir tareas en cada ambiente: el muestrista de prueba solo
 // recibe tareas de prueba (lo exigen también las reglas).
 export function muestristasDe(demo) {

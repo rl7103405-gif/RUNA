@@ -1,6 +1,6 @@
 // Ficha práctica: inicio de captura, formulario, borradores y envío a firma
 import { db, fsOk } from './fb.js';
-import { APP, OPEN_STATES, TM_CAUSES } from './state.js';
+import { APP, OPEN_STATES, TM_CAUSES, opcionesAgujado } from './state.js';
 import { es, fmt, gv, scr, toast, confirmDlg } from './utils.js';
 import { timers, getT, elapsedOf, tmOf, tenOf, causesOf, startT, pauseT, seedFromDoc } from './timers.js';
 import { showFirma } from './firma.js';
@@ -233,10 +233,7 @@ export async function openCap(capturaId) {
           <div class="fg"><label class="fl">Marca</label><input class="fi" id="f-mm" value="${es(d.maquina_marca)}" placeholder="Zhenxing"></div>
           <div class="fg"><label class="fl">Número</label><input class="fi" id="f-mn" value="${es(d.maquina_numero)}" placeholder="71"></div>
           <div class="fg"><label class="fl">Agujado</label>
-            <select class="fi" id="f-ag">
-              <option value="">— elegir —</option>
-              ${['108', '120', '132', '144', '200'].map(n => `<option${String(d.agujado) === n ? ' selected' : ''}>${n}</option>`).join('')}
-            </select>
+            <select class="fi" id="f-ag">${opcionesAgujado(d.agujado)}</select>
           </div>
         </div>
       </div>

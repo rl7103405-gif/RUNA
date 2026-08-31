@@ -110,6 +110,7 @@
     <span>🧦</span>
     <h1 id="m-name">—</h1>
     <span class="rbM">Muestrista</span>
+    <button class="camp" id="nov-btn-m" onclick="abrirNovedades('nov-btn-m')" title="Novedades de la app" aria-label="Novedades">🔔<span class="camp-globo" id="nov-badge-m" style="display:none">0</span></button>
     <button onclick="logout()" style="background:none;border:none;color:var(--tx2);font-size:20px;cursor:pointer;padding:4px;margin-left:4px" title="Salir">⟵</button>
     <button onclick="openChangePinSelf()" style="background:none;border:none;color:var(--tx2);font-size:18px;cursor:pointer;padding:4px" title="Cambiar PIN">⚙️</button>
   </div>
@@ -150,6 +151,7 @@
     <span>🧦</span>
     <h1 id="sL-title">Lety — Administración</h1>
     <span class="rbA" id="sL-rol">Admin</span>
+    <button class="camp" id="nov-btn-l" onclick="abrirNovedades('nov-btn-l')" title="Novedades de la app" aria-label="Novedades">🔔<span class="camp-globo" id="nov-badge-l" style="display:none">0</span></button>
     <button onclick="logout()" style="background:none;border:none;color:var(--tx2);font-size:20px;cursor:pointer;padding:4px;margin-left:4px" title="Salir">⟵</button>
     <button onclick="openChangePinSelf()" style="background:none;border:none;color:var(--tx2);font-size:18px;cursor:pointer;padding:4px" title="Cambiar PIN">⚙️</button>
   </div>
@@ -186,7 +188,7 @@
         <div class="fg"><label class="fl">Tipo de producto</label><input class="fi" id="l-tprod" placeholder="6 Pack Mid Crew Básico Liso"></div>
         <div class="fg"><label class="fl">Tipo de pack</label><input class="fi" id="l-pack" placeholder="6 Pack / Individual"></div>
         <div class="fg"><label class="fl">Agujado (número de agujas)</label>
-          <select class="fi" id="l-ag"><option value="">— elegir —</option><option>108</option><option>120</option><option>132</option><option>144</option><option>200</option></select>
+          <select class="fi" id="l-ag"><option value="">— elegir —</option></select>
         </div>
         <div class="fg">
           <label class="fl">Complejidad (solo visible para ti)</label>
@@ -421,6 +423,20 @@
     <div class="fg"><label class="fl">Motivo (obligatorio)</label><textarea class="fi" id="can-motivo" rows="3" maxlength="300" placeholder="Tarea duplicada, el cliente canceló, se asignó por error…"></textarea></div>
     <button class="btn btn-rd" id="can-ok" onclick="confirmarCancelarTarea()">🗑 Sí, cancelar la tarea</button>
     <button class="btn btn-gh" onclick="closeOvl('ocan')">Volver</button>
+  </div>
+</div>
+
+<!-- MODAL: NOVEDADES (la campanita) -->
+<div class="ovl" id="onov" role="dialog" aria-modal="true" aria-labelledby="nov-title">
+  <div class="msheet">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+      <div id="nov-title" style="font-size:18px;font-weight:800;flex:1">Novedades</div>
+      <button id="nov-cerrar" onclick="cerrarNovedades()" aria-label="Cerrar" style="background:none;border:none;font-size:24px;line-height:1;color:var(--tx2);cursor:pointer;padding:2px 6px">×</button>
+    </div>
+    <div style="font-size:13px;color:var(--tx2)">Lo que hemos corregido o agregado a la app.</div>
+    <div id="nov-version" style="font-size:12px;color:var(--tx3);margin:8px 0 12px;padding-bottom:10px;border-bottom:1px solid var(--b1)"></div>
+    <div id="nov-lista"></div>
+    <button class="btn btn-gh" style="margin-top:6px" onclick="cerrarNovedades()">Cerrar</button>
   </div>
 </div>
 

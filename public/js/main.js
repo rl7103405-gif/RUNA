@@ -11,6 +11,7 @@ import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backR
 import { loadDB } from './dashboard.js';
 import { exportCSV, exportExcel } from './export.js';
 import { openCatalogo, catArchivo, wireCatalogoEvents } from './catalogo.js';
+import { abrirNovedades, cerrarNovedades, refrescaCampana } from './novedades.js';
 
 // El HTML estático usa onclick="..."; los módulos no son globales, así que
 // exponemos explícitamente lo que el markup necesita.
@@ -26,6 +27,7 @@ Object.assign(window, {
   loadTareas, openTarea, backTarea, guardarDatosTarea, agregarVariante, cancelarTarea, confirmarCancelarTarea, repararCancelacion,
   loadDB, exportCSV, exportExcel,
   openCatalogo, catArchivo,
+  abrirNovedades, cerrarNovedades,
 });
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -37,10 +39,11 @@ window.addEventListener('DOMContentLoaded', () => {
   wireAutollenado();
   wireFichaEvents();
   // Cerrar modales al tocar el fondo (excepto el de confirmación)
-  ['otm', 'otma', 'ocp', 'ocan'].forEach(id => {
+  ['otm', 'otma', 'ocp', 'ocan', 'onov'].forEach(id => {
     const ovl = document.getElementById(id);
     ovl.addEventListener('click', e => { if (e.target === ovl) closeOvl(id); });
   });
+  refrescaCampana();
   tryInitFB(0);
 });
 

@@ -1,6 +1,6 @@
 // Vista de Lety: asignación de desarrollos y revisión/aprobación de fichas
 import { db, fsOk } from './fb.js';
-import { APP, USERS, TM_CAUSES, muestristasDe, esDeMiAmbiente, enAmbiente } from './state.js';
+import { APP, USERS, TM_CAUSES, muestristasDe, esDeMiAmbiente, enAmbiente, opcionesAgujado } from './state.js';
 import { es, fmt, fmtMin, fmtDate, gv, scr, toast, confirmDlg, tenFromDoc, esFirmaValida, loadLib, showExito, openOvl, closeOvl } from './utils.js';
 import { parseLibro, comparar } from './ficha-tecnica.js';
 import { showFirma } from './firma.js';
@@ -121,6 +121,8 @@ function aplicarAmbiente() {
     sel.innerHTML = (conTodos ? '<option value="all">' + textoTodos + '</option>' : '')
       + nombres.map(u => '<option value="' + es(u) + '">' + es((USERS[u] || {}).nombre || u) + '</option>').join('');
   };
+  const ag = document.getElementById('l-ag');
+  if (ag) { const v = ag.value; ag.innerHTML = opcionesAgujado(v); }
   pinta('l-asig', false);
   pinta('dw', true, 'Todos');
   pinta('tk-quien', true, demo ? 'Todos (demo)' : 'Los dos');
@@ -1265,7 +1267,7 @@ export async function openTarea(devId) {
         + (faltaOT ? '<div class="fg"><label class="fl">OT</label><input class="fi" id="tk-ot" placeholder="7735"></div>' : '')
         + (faltaPO ? '<div class="fg"><label class="fl">PO</label><input class="fi" id="tk-po" placeholder="2422"></div>' : '')
         + '</div>'
-        + (faltaAg ? '<div class="fg"><label class="fl">Agujado</label><select class="fi" id="tk-ag"><option value="">— elegir —</option><option>108</option><option>120</option><option>132</option><option>144</option><option>200</option></select></div>' : '')
+        + (faltaAg ? '<div class="fg"><label class="fl">Agujado</label><select class="fi" id="tk-ag">' + opcionesAgujado(d.agujado) + '</select></div>' : '')
         + '<button class="btn btn-am btn-sm" style="width:100%" onclick="guardarDatosTarea()">💾 Guardar datos</button></div>'
       : '';
 
