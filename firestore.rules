@@ -761,6 +761,27 @@ service cloud.firestore {
                             && request.resource.data.pares_requeridos.matches('^[0-9]{1,10}$')
                             && resource.data.codigo_variante in devDeCaptura(resource.data.id_desarrollo).get('pares_por_codigo', {})
                             && request.resource.data.pares_requeridos == devDeCaptura(resource.data.id_desarrollo).pares_por_codigo[resource.data.codigo_variante]));
+      // ── Lety DESCARTA una ficha suelta (2026-09-01). Caso real: el
+      // muestrista la empezó sobre el código equivocado; corregir los datos no
+      // sirve porque `codigo_variante` es la identidad de la ficha y es
+      // inmutable. La tarea sigue viva y la variante queda libre para
+      // empezarse bien (varStatus la vuelve a ver como 'nueva').
+      //
+      // Solo el ADMIN, nunca el muestrista: es el mismo criterio de la pausa
+      // autorizada — quien es medido no borra su propio registro. Y solo
+      // fichas NO aprobadas: para descartar una aprobada hay que reabrirla
+      // primero (queda el rastro de que se reabrió).
+      allow update: if esAdmin()
+                    && mismoAmbiente(resource.data)
+                    && resource.data.estado in ['activo', 'pausado', 'correccion', 'pendiente_lety']
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['estado', 'cancelada_en', 'cancelada_por', 'cancelada_motivo'])
+                    && request.resource.data.estado == 'cancelada'
+                    && request.resource.data.cancelada_en == request.time
+                    && request.resource.data.cancelada_por == miEmpleadoId()
+                    && request.resource.data.cancelada_motivo is string
+                    && request.resource.data.cancelada_motivo.trim().size() >= 5
+                    && request.resource.data.cancelada_motivo.size() <= 300;
       // ── Lety canceló la tarea: sus fichas NO APROBADAS se cierran con ella,
       // en el mismo batch (por eso getAfter). Incluye las firmadas que
       // esperaban revisión — si se quedaran vivas seguirían en la cola y en el

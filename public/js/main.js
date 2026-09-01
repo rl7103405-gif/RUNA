@@ -7,7 +7,8 @@ import { mTab, loadMHist, openTMFor, endTMA, wireMuestristaEvents } from './mues
 import { backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
 import { clearSig, saveSig, backFirma } from './firma.js';
 import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev, wireAdminEvents, wireAutollenado, ftArchivo, asignarDesdeFicha, wireFichaEvents,
-  loadTareas, openTarea, backTarea, guardarDatosTarea, agregarVariante, cancelarTarea, confirmarCancelarTarea, repararCancelacion } from './admin.js';
+  loadTareas, openTarea, backTarea, guardarDatosTarea, agregarVariante, cancelarTarea, confirmarCancelarTarea, repararCancelacion,
+  descartarFicha, confirmarDescartarFicha } from './admin.js';
 import { loadDB } from './dashboard.js';
 import { exportCSV, exportExcel } from './export.js';
 import { openCatalogo, catArchivo, wireCatalogoEvents } from './catalogo.js';
@@ -25,6 +26,7 @@ Object.assign(window, {
   ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backRev,
   ftArchivo, asignarDesdeFicha,
   loadTareas, openTarea, backTarea, guardarDatosTarea, agregarVariante, cancelarTarea, confirmarCancelarTarea, repararCancelacion,
+  descartarFicha, confirmarDescartarFicha,
   loadDB, exportCSV, exportExcel,
   openCatalogo, catArchivo,
   abrirNovedades, cerrarNovedades,
@@ -39,7 +41,7 @@ window.addEventListener('DOMContentLoaded', () => {
   wireAutollenado();
   wireFichaEvents();
   // Cerrar modales al tocar el fondo (excepto el de confirmación)
-  ['otm', 'otma', 'ocp', 'ocan', 'onov'].forEach(id => {
+  ['otm', 'otma', 'ocp', 'ocan', 'onov', 'odesc'].forEach(id => {
     const ovl = document.getElementById(id);
     ovl.addEventListener('click', e => { if (e.target === ovl) closeOvl(id); });
   });

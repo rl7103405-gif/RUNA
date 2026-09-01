@@ -955,11 +955,15 @@ export async function openRev(capturaId, readOnly = false, soloVer = false) {
         : soloVer
         ? `<div class="al ali"><span>⏱</span><span style="font-size:12px">El muestrista sigue capturando esta ficha. Aquí ves lo que lleva y la ficha técnica de referencia; podrás aprobarla cuando la firme.</span></div>`
         : readOnly
-        ? `<button class="btn btn-bl" onclick="reabrirFicha()">🔓 Reabrir ficha (volver a pendiente)</button>`
+        ? `<button class="btn btn-bl" onclick="reabrirFicha()">🔓 Reabrir ficha (volver a pendiente)</button>
+           <div style="font-size:11px;color:var(--tx3);text-align:center;margin-top:2px">Si la ficha no debió existir (código equivocado), reábrela y luego descártala.</div>`
         : `<div class="brow">
             <button class="btn btn-gn" style="flex:1" onclick="aprobar()">✓ Aprobar y firmar</button>
             <button class="btn btn-rd" style="flex:1" onclick="rechazar()">✕ Solicitar corrección</button>
           </div>`}
+      ${(APP.soloLectura || readOnly) ? '' : `
+        <button class="btn btn-gh" style="margin-top:10px;color:var(--rd);border-color:var(--rd-bd)" onclick="descartarFicha()">🗑 Descartar esta ficha…</button>
+        <div style="font-size:11px;color:var(--tx3);text-align:center">Para cuando la ficha se capturó sobre el código equivocado y no hay nada que corregir.</div>`}
     `;
     scr('sR');
     renderComparacion(d, capturaId); // asíncrono: no retrasa el render de la ficha
@@ -1707,6 +1711,84 @@ export async function repararCancelacion() {
     console.error('repararCancelacion:', e);
     toast('No se pudo reparar — revisa tu conexión', false);
   } finally { reparando = null; }
+}
+
+// ── Descartar UNA ficha ──
+// Para cuando la ficha no debió existir (se capturó sobre el código
+// equivocado): corregir los datos no arregla nada porque el código de la
+// variante es su identidad y no se puede cambiar. Queda registrada, sale de
+// los indicadores, y la variante vuelve a estar libre.
+export function descartarFicha() {
+  if (!APP.revCap || soloConsulta()) return;
+  const el = document.getElementById('desc-motivo');
+  if (el) el.value = '';
+  openOvl('odesc');
+}
+
+let descartando = null;
+
+export async function confirmarDescartarFicha() {
+  if (!fsOk() || !APP.revCap || soloConsulta()) return;
+  if (descartando) return;
+  const motivo = gv('desc-motivo').trim();
+  if (motivo.length < 5) { toast('Escribe el motivo (al menos 5 letras)', false); return; }
+  const capId = APP.revCap;
+  descartando = capId;
+  const btn = document.getElementById('desc-ok');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Descartando…'; }
+  try {
+    // Se cierran antes las pausas vivas de esa ficha: si no, se quedarían en
+    // la cola de Lety pidiendo autorización de una ficha que ya no existe.
+    try {
+      const ps = await db.collection('capturas').doc(capId).collection('pausas')
+        .where('estado', 'in', ['pendiente', 'aprobada']).get();
+      await Promise.all(ps.docs.map(p => p.ref.update({
+        estado: 'rechazada',
+        decidida_en: firebase.firestore.FieldValue.serverTimestamp(),
+        decidida_por: APP.user.id,
+      }).catch(e => console.error('pausa de ficha descartada:', e))));
+    } catch (e) { console.error('pausas de ficha descartada:', e); }
+
+    const devId = await transicionDescartar(capId, motivo);
+    closeOvl('odesc');
+    toast('🗑 Ficha descartada — la variante quedó libre');
+    // La tarea puede haber quedado completa o incompleta: se recalcula
+    if (devId) reconciliarEstadoTarea(devId);
+    scr('sL');
+    loadRev();
+    loadDB();
+  } catch (e) {
+    console.error('descartarFicha:', e);
+    toast(e && e.message === 'estado-cambiado'
+      ? 'La ficha ya cambió de estado — lista actualizada'
+      : e && e.code === 'permission-denied'
+        ? 'No se pudo descartar: una ficha ya aprobada hay que reabrirla primero'
+        : 'No se pudo descartar — revisa tu conexión', false);
+  } finally {
+    descartando = null;
+    if (btn) { btn.disabled = false; btn.textContent = '🗑 Sí, descartar la ficha'; }
+  }
+}
+
+// Transacción: solo descarta si la ficha SIGUE en un estado descartable (que
+// el muestrista no la haya firmado mientras Lety tenía la pantalla abierta).
+async function transicionDescartar(capId, motivo) {
+  const ref = db.collection('capturas').doc(capId);
+  let devId = null;
+  await db.runTransaction(async tx => {
+    const s = await tx.get(ref);
+    if (!s.exists || !['activo', 'pausado', 'correccion', 'pendiente_lety'].includes(s.data().estado)) {
+      throw new Error('estado-cambiado');
+    }
+    devId = s.data().id_desarrollo || null;
+    tx.update(ref, {
+      estado: 'cancelada',
+      cancelada_motivo: motivo.slice(0, 300),
+      cancelada_por: APP.user.id,
+      cancelada_en: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+  return devId;
 }
 
 export function backRev() {

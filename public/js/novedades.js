@@ -43,6 +43,16 @@ export const DIAS_NOVEDAD_INICIAL = 30;
 
 export const NOVEDADES = [
   {
+    id: '2026-09-01-01',
+    fecha: '2026-09-01',
+    tipo: 'nuevo',
+    titulo: 'Si te equivocaste de código, avísale a Lety',
+    detalle: 'Cuando una ficha se empezó sobre el código equivocado, ya no hay que cancelar '
+      + 'la tarea entera: Lety puede descartar SOLO esa ficha, y esa variante te vuelve a '
+      + 'aparecer con su botón de Iniciar para hacerla bien. El tiempo de la ficha descartada '
+      + 'no cuenta en tus números. Avísale en cuanto te des cuenta.',
+  },
+  {
     id: '2026-08-31-03',
     fecha: '2026-08-31',
     tipo: 'mejorado',

@@ -415,6 +415,17 @@
   </div>
 </div>
 
+<!-- MODAL: DESCARTAR UNA FICHA (solo Lety) — el motivo es obligatorio -->
+<div class="ovl" id="odesc" role="dialog" aria-modal="true">
+  <div class="msheet">
+    <div style="font-size:16px;font-weight:700;margin-bottom:6px">🗑 Descartar esta ficha</div>
+    <div class="al alw" style="margin-bottom:12px"><span>⚠️</span><span style="font-size:12px">La ficha queda registrada como descartada y <strong>sale de los indicadores</strong>. La variante vuelve a quedar libre para empezarse otra vez. <strong>No se puede deshacer.</strong></span></div>
+    <div class="fg"><label class="fl">Motivo (obligatorio)</label><textarea class="fi" id="desc-motivo" rows="3" maxlength="300" placeholder="Se capturó sobre el código equivocado, se inició por error…"></textarea></div>
+    <button class="btn btn-rd" id="desc-ok" onclick="confirmarDescartarFicha()">🗑 Sí, descartar la ficha</button>
+    <button class="btn btn-gh" onclick="closeOvl('odesc')">Volver</button>
+  </div>
+</div>
+
 <!-- MODAL: CANCELAR TAREA (solo Lety) — el motivo es obligatorio -->
 <div class="ovl" id="ocan" role="dialog" aria-modal="true">
   <div class="msheet">
