@@ -338,7 +338,13 @@ export function setMode(mode) {
   // En un pack, el código de arriba ES la primera variante (Lety lo escribía
   // ahí y luego lo volvía a teclear como variante; junta del 2026-08-20).
   const lbl = document.getElementById('l-cq-lbl');
-  if (lbl) lbl.textContent = mode === 'pack' ? 'Código Quini — entra como variante 1 del pack' : 'Código Quini';
+  if (lbl) lbl.textContent = mode === 'pack' ? 'Código Quini — entra como variante 1 del pack'
+    : mode === 'single' ? 'Código Quini — este es el código de la tarea'
+    : 'Código Quini';
+  // En código único el de abajo es opcional: solo si el código con el que
+  // trabaja el muestrista es distinto al del pedido
+  const lblS = document.getElementById('s-cod-lbl');
+  if (lblS) lblS.textContent = 'Código variante (solo si es distinto al de arriba)';
   invalidarLookups();
   if (mode === 'ficha') {
     // Limpia el estado de los otros modos: que no quede nada fantasma que
@@ -754,8 +760,11 @@ export async function asignar() {
     const pack = gv('l-pack').trim();
     let variantes = [];
     if (APP.asignMode === 'single') {
-      const cod = normalizarCodigo(gv('s-cod'));
-      if (!cod) { toast('Ingresa el código de variante', false); return; }
+      // Un código único es UN código: si no escribió uno distinto abajo, el de
+      // arriba (Código Quini) es el código de la tarea. Antes la app le pedía
+      // el de abajo aunque ya hubiera puesto el de arriba, y no dejaba pasar.
+      const cod = normalizarCodigo(gv('s-cod')) || normalizarCodigo(gv('l-cq'));
+      if (!cod) { toast('Escribe el código de la tarea (arriba, en Código Quini)', false); return; }
       if (!codigoValido(cod)) { toast('El código no puede llevar espacios ni símbolos raros', false); return; }
       // Código único: la complejidad del código es la misma del desarrollo
       variantes = [{ codigo: cod, descripcion: gv('s-desc').trim(), pares_requeridos: gv('s-pares').trim(), tipo_pack: pack, complejidad: gv('l-comp') }];

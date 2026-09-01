@@ -43,6 +43,16 @@ export const DIAS_NOVEDAD_INICIAL = 30;
 
 export const NOVEDADES = [
   {
+    id: '2026-09-01-02',
+    fecha: '2026-09-01',
+    tipo: 'corregido',
+    titulo: 'Código único: con un solo código basta',
+    detalle: 'Al asignar una tarea de código único, la app pedía un segundo código abajo '
+      + 'aunque ya se hubiera escrito el de arriba, y no dejaba guardar. Ya no: el Código '
+      + 'Quini de arriba es el código de la tarea. El de abajo solo se llena si el muestrista '
+      + 'trabaja con uno distinto.',
+  },
+  {
     id: '2026-09-01-01',
     fecha: '2026-09-01',
     tipo: 'nuevo',
