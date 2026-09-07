@@ -8,6 +8,32 @@
     ],
     "headers": [
       {
+        "_comment": "Cabeceras de seguridad (2026-09-07). La CSP va en modo REPORTE: si falta un origen se ve en la consola del navegador pero NO se bloquea nada. Pasarla a Content-Security-Policy a secas cuando lleve dias sin reportar violaciones.",
+        "source": "**",
+        "headers": [
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+          },
+          {
+            "key": "Content-Security-Policy-Report-Only",
+            "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self'; connect-src 'self' blob: data: https://*.googleapis.com https://*.google.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://firebasestorage.googleapis.com https://cdn.jsdelivr.net https://cdn.sheetjs.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+          }
+        ]
+      },
+      {
         "_comment": "El codigo de la app se revalida siempre: sin esto el navegador lo guarda una hora y el service worker precachea esa copia vieja (2026-08-24)",
         "source": "**/*.@(js|css|html)",
         "headers": [
