@@ -5,7 +5,9 @@
 import { APP, USERS, TM_CAUSES } from './state.js';
 import { toast, tenFromDoc, penFromCausas, loadLib, confirmDlg } from './utils.js';
 
-const EXCELJS_URL = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+// Exportados para que ficha-excel.js no duplique la URL ni el saneado: si un
+// día se cambia la versión de ExcelJS o la regla anti-fórmula, se cambia aquí.
+export const EXCELJS_URL = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
 // ExcelJS arma el libro y el ZIP en memoria: el pico es varias veces el tamaño
 // final. En tablets baratas conviene avisar antes de intentarlo.
 const AVISO_FILAS = 2000;
@@ -76,7 +78,7 @@ function nombreArchivo(ext) {
   return `historial-muestristas-${period}-${hoy}.${ext}`;
 }
 
-function descargar(blob, nombre) {
+export function descargar(blob, nombre) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = nombre;
@@ -93,7 +95,7 @@ function csvCell(v) {
 }
 
 // Texto libre: neutraliza el inicio de fórmula para Excel
-function antiFormula(v) {
+export function antiFormula(v) {
   const s = String(v ?? '');
   return /^\s*[=+\-@\t\r]/.test(s) ? "'" + s : s;
 }

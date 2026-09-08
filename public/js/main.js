@@ -11,6 +11,7 @@ import { ltTab, setMode, addVar, asignar, aprobar, rechazar, reabrirFicha, backR
   descartarFicha, confirmarDescartarFicha } from './admin.js';
 import { loadDB } from './dashboard.js';
 import { exportCSV, exportExcel } from './export.js';
+import { descargarFichaExcel, descargarFichasTarea } from './ficha-excel.js';
 import { openCatalogo, catArchivo, wireCatalogoEvents } from './catalogo.js';
 import { abrirNovedades, cerrarNovedades, refrescaCampana } from './novedades.js';
 
@@ -28,6 +29,7 @@ Object.assign(window, {
   loadTareas, openTarea, backTarea, guardarDatosTarea, agregarVariante, cancelarTarea, confirmarCancelarTarea, repararCancelacion,
   descartarFicha, confirmarDescartarFicha,
   loadDB, exportCSV, exportExcel,
+  descargarFichaExcel, descargarFichasTarea,
   openCatalogo, catArchivo,
   abrirNovedades, cerrarNovedades,
 });

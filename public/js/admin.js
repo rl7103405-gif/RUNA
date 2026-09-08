@@ -878,12 +878,18 @@ function renderRevCard(id, d) {
 // readOnly=true: ver ficha ya aprobada (con opción de reabrir)
 export async function openRev(capturaId, readOnly = false, soloVer = false) {
   if (!fsOk()) return;
+  const ses = APP.sesion;
   APP.revCap = capturaId;
   // Se limpia aquí: renderComparacion solo la asigna cuando ESTA captura tiene
   // ficha técnica, así que sin el reset quedaría la de la ficha anterior.
   APP.revFicha = null;
   try {
     const snap = await db.collection('capturas').doc(capturaId).get();
+    // Dos toques seguidos en la lista dejaban en pantalla la ficha que
+    // tardó más en llegar, mientras APP.revCap apuntaba a la otra: aprobar,
+    // descartar o descargar habría trabajado sobre la que NO se ve. Y una
+    // lectura que llega tras el logout no debe repintar nada.
+    if (ses !== APP.sesion || APP.revCap !== capturaId) return;
     const d = snap.data();
     if (!d) { toast('Ficha no encontrada', false); return; }
     APP.revFolio = d.folio || null; // para la pantalla de éxito al aprobar
@@ -959,6 +965,8 @@ export async function openRev(capturaId, readOnly = false, soloVer = false) {
       ${d.obs ? `<div class="fsec"><div class="ftitle">Observaciones</div><div style="font-size:13px">${es(d.obs)}</div></div>` : ''}
       ${esFirmaValida(d.firma_m) ? `<div class="fsec"><div class="ftitle">Firma muestrista</div><img src="${es(d.firma_m)}" alt="Firma muestrista" class="firma-img"></div>` : ''}
       ${readOnly && esFirmaValida(d.firma_l) ? `<div class="fsec"><div class="ftitle">Firma de aprobación (Lety)</div><img src="${es(d.firma_l)}" alt="Firma Lety" class="firma-img"></div>` : ''}
+      <button class="btn btn-gh" style="margin-top:10px" onclick="descargarFichaExcel()">📥 Descargar ficha técnica (Excel)</button>
+      <div style="font-size:11px;color:var(--tx3);text-align:center">Para pegarla en el tech pack. Lo que falte sale marcado como PENDIENTE.</div>
       ${APP.soloLectura
         ? `<div class="al ali"><span>👔</span><span style="font-size:12px">Vista de consulta: esta ficha la revisa y firma Lety.</span></div>`
         : soloVer
@@ -976,7 +984,10 @@ export async function openRev(capturaId, readOnly = false, soloVer = false) {
     `;
     scr('sR');
     renderComparacion(d, capturaId); // asíncrono: no retrasa el render de la ficha
-  } catch (e) { console.error(e); toast('Error cargando revisión', false); }
+  } catch (e) {
+    console.error(e);
+    if (ses === APP.sesion && APP.revCap === capturaId) toast('Error cargando revisión', false);
+  }
 }
 
 // Comparación objetivo (ficha técnica) vs. real (lo que capturó el muestrista).
@@ -1299,6 +1310,8 @@ export async function openTarea(devId) {
       + (editable ? '<div class="al ali" style="margin-bottom:8px"><span>✏️</span><span style="font-size:12px">Los pares requeridos se pueden ajustar: cambia el número y toca 💾. Queda registrado y el muestrista lo ve en su tarea.</span></div>' : '')
       + variantes
       + registro
+      + '<button class="btn btn-gh btn-sm" style="width:100%;margin-top:14px" onclick="descargarFichasTarea()">📥 Descargar fichas técnicas (Excel)</button>'
+      + '<div style="font-size:11px;color:var(--tx3);text-align:center">Una hoja por variante, para pegar en el tech pack. Lo que falte sale marcado como PENDIENTE.</div>'
       + ((cancelada || ro) ? '' : '<div class="fsec"><div class="ftitle">Agregar variante</div>'
       + '<div class="al ali"><span>➕</span><span style="font-size:12px">Para cuando el cliente pide más colores o derecho e izquierdo sobre una tarea ya empezada. Las variantes que ya existen no se tocan.</span></div>'
       + '<div class="g2">'

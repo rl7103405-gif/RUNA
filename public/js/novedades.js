@@ -43,6 +43,18 @@ export const DIAS_NOVEDAD_INICIAL = 30;
 
 export const NOVEDADES = [
   {
+    id: '2026-09-08-01',
+    fecha: '2026-09-08',
+    tipo: 'nuevo',
+    titulo: 'Descargar la ficha en Excel',
+    detalle: 'Al abrir una ficha ya capturada hay un botón para bajarla en Excel, con todo '
+      + 'lo que la app sabe de ese modelo: máquina, agujado, medidas, tiempos, pesos, punto '
+      + 'de máquina, observaciones y, si la tarea se cargó desde el archivo de ficha técnica, '
+      + 'también los hilos. Desde el detalle de una tarea se bajan todas sus variantes de un '
+      + 'jalón, una hoja por código. Lo que todavía no se ha capturado sale escrito como '
+      + 'PENDIENTE, para ver de un golpe qué falta pedir.',
+  },
+  {
     id: '2026-09-01-02',
     fecha: '2026-09-01',
     tipo: 'corregido',
