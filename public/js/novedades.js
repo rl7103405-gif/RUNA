@@ -43,6 +43,15 @@ export const DIAS_NOVEDAD_INICIAL = 30;
 
 export const NOVEDADES = [
   {
+    id: '2026-09-22-05',
+    fecha: '2026-09-22',
+    tipo: 'mejorado',
+    titulo: 'Cada quien con su horario',
+    detalle: 'Lety confirmó los horarios, así que el reloj de cada ficha ya cuenta con el horario '
+      + 'de quien la trabaja: Jesús de 8 a 6 de lunes a viernes y el sábado de 8 a 1; Israel de 7 '
+      + 'a 7 de lunes a sábado. Fuera de su horario el reloj se queda quieto solo.',
+  },
+  {
     id: '2026-09-22-04',
     fecha: '2026-09-22',
     tipo: 'corregido',

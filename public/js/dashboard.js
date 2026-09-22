@@ -73,7 +73,7 @@ export async function loadDB() {
         .catch(e => { console.error('pausas del diagnóstico:', e); return { snap: null, error: true }; }),
     ]);
     if (seq !== loadSeq || ses !== APP.sesion) return; // llegó tarde: ya hay una carga más nueva u otra sesión
-    const respaldo = pausas.snap ? respaldoPorFicha(pausas.snap) : null;
+    const respaldo = pausas.snap ? respaldoPorFicha(pausas.snap, grupo) : null;
     const grupo = snap.docs.filter(d => esDeMiAmbiente(d.data())); // las de prueba no entran a los reales
     const deQuien = d => who === 'all' || d.data().id_muestrista === who;
 
@@ -150,7 +150,11 @@ export async function loadDB() {
 // abierta cuenta hasta ahora; las horas son del servidor (`inicio_tm` y
 // `fin_tm` se escriben con request.time), así que esto no se puede inflar
 // desde la tablet.
-function respaldoPorFicha(snap) {
+function respaldoPorFicha(snap, capturas) {
+  // Cada pausa se mide con el turno de quien hizo ESA ficha: Israel y Jesús
+  // tienen horarios distintos (horario.js).
+  const dueno = {};
+  (capturas || []).forEach(c => { dueno[c.id] = c.data().id_muestrista; });
   const out = {};
   snap.docs.forEach(d => {
     const capId = d.ref.parent.parent ? d.ref.parent.parent.id : null;
@@ -162,7 +166,7 @@ function respaldoPorFicha(snap) {
     // Con la misma vara que el cronómetro: solo horas de turno. Si se midiera
     // a reloj de pared, una pausa que cruza la noche respaldaría un tiempo
     // muerto que el cronómetro ya no cuenta.
-    out[capId] = (out[capId] || 0) + segundosLaborales(ini, fin);
+    out[capId] = (out[capId] || 0) + segundosLaborales(ini, fin, dueno[capId]);
   });
   return out;
 }

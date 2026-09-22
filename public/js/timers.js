@@ -31,18 +31,22 @@ export function getT(id) {
   return timers[id];
 }
 
+// Los timers viven en la tablet de quien captura, así que el turno que aplica
+// es el suyo (los horarios de Israel y Jesús son distintos: ver horario.js).
+const quienCaptura = () => (APP.user ? APP.user.id : null);
+
 // El tramo en curso cuenta SOLO horas de turno (ver horario.js): una ficha
 // abierta el jueves y firmada el martes ya no se lleva las noches ni el fin de
 // semana. Medido el 2026-09-22: una ficha llevaba 18.9 días de reloj corrido.
 export function elapsedOf(id) {
   const t = timers[id];
   if (!t) return 0;
-  return Math.floor(t.accum + (t.running && t.startedAt ? segundosLaborales(t.startedAt, Date.now()) : 0));
+  return Math.floor(t.accum + (t.running && t.startedAt ? segundosLaborales(t.startedAt, Date.now(), quienCaptura()) : 0));
 }
 export function tmOf(id) {
   const t = timers[id];
   if (!t) return 0;
-  return Math.floor(t.tmAccum + (t.running && t.tmActive && t.tmStartedAt ? segundosLaborales(t.tmStartedAt, Date.now()) : 0));
+  return Math.floor(t.tmAccum + (t.running && t.tmActive && t.tmStartedAt ? segundosLaborales(t.tmStartedAt, Date.now(), quienCaptura()) : 0));
 }
 
 // Techo por ficha: el cronómetro no puede pasar de las horas de turno desde
@@ -60,7 +64,7 @@ export function aplicarTope(id, dtInicioMs, ahoraMs) {
   if (ahora <= dtInicioMs) return false;
   // Misma holgura que las reglas (firestore.rules): 2 minutos de desfase
   // entre relojes no son un exceso.
-  const tope = topeDesde(dtInicioMs, ahora) + 120;
+  const tope = topeDesde(dtInicioMs, ahora, quienCaptura()) + 120;
   const exceso = elapsedOf(id) - tope;
   if (exceso <= 0) return false;
   t.accum = Math.max(0, t.accum - exceso);
@@ -155,7 +159,7 @@ export function startTMDesde(id, causeId, desdeMs) {
   t.tmCauseStart = tmOf(id);
   // El tiempo transcurrido desde la aprobación ya es tiempo muerto: se abona
   // de golpe, acotado al tiempo que la ficha lleva corriendo.
-  const atrasoSeg = Math.max(0, segundosLaborales(desdeMs, Date.now()));
+  const atrasoSeg = Math.max(0, segundosLaborales(desdeMs, Date.now(), quienCaptura()));
   if (atrasoSeg > 0) {
     const margen = Math.max(0, elapsedOf(id) - tmOf(id));
     t.tmAccum += Math.min(atrasoSeg, margen);

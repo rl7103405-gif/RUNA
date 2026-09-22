@@ -240,7 +240,7 @@ setInterval(() => {
   // Fuera del turno el reloj no avanza (ver horario.js): se dice en pantalla,
   // para que nadie piense que la app se trabó.
   const fuera = document.getElementById('cap-fuera');
-  if (fuera) fuera.hidden = enHorario();
+  if (fuera) fuera.hidden = enHorario(APP.user ? APP.user.id : null);
   document.querySelectorAll('[data-tf]').forEach(elm => {
     const id = elm.dataset.tid;
     if (!timers[id]) return;

@@ -81,6 +81,8 @@ export function evaluarTiempo(c, respaldoSeg) {
   }
   // Tejido estimado: dos calcetines por par, uno tras otro, al tiempo de
   // ciclo capturado. Es un piso: nadie teje más rápido que su máquina.
+  // Lety confirmó el 2026-09-22 que el tiempo de ciclo es POR PIEZA (un
+  // calcetín), que es justo lo que este cálculo supone.
   const tejidoMin = pares * 2 * ciclo;
   const motivos = [];
   if (Number.isFinite(respaldoSeg)
