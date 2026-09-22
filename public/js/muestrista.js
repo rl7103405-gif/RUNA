@@ -2,8 +2,9 @@
 import { db, fsOk } from './fb.js';
 import { APP, USERS, TM_CAUSES, OPEN_STATES } from './state.js';
 import { es, fmt, fmtMin, fmtDate, getRange, toast, openOvl, closeOvl, tenFromDoc } from './utils.js';
-import { timers, getT, elapsedOf, tmOf, tenOf, startT, pauseT, startTM, startTMDesde, endTM, syncToFS, restoreTimers, seedFromDoc, dropTimer } from './timers.js';
+import { timers, getT, elapsedOf, tmOf, tenOf, startT, pauseT, startTM, startTMDesde, endTM, syncToFS, restoreTimers, seedFromDoc, dropTimer, aplicarTope } from './timers.js';
 import { startCap, openCap, reopenCorreccion, refrescaBotonera, refrescaAvisoPares, paresVigentes, cerrarFichaRemota } from './captura.js';
+import { enHorario } from './horario.js';
 
 export function mTab(i, btn) {
   [0, 1, 2].forEach(j => document.getElementById('mt' + j).classList.remove('on'));
@@ -61,7 +62,14 @@ export function initMuestrista() {
         }
       }
       const open = APP.allCaps.filter(c => OPEN_STATES.includes(c.data.estado));
-      open.forEach(c => seedFromDoc(c.id, c.data));
+      open.forEach(c => {
+        seedFromDoc(c.id, c.data);
+        // Techo por horario: si el cronómetro trae más de las horas de turno
+        // que han pasado desde que se abrió la ficha (por ejemplo las que ya
+        // venían con días enteros de reloj), se recorta y se guarda corregido.
+        const ini = c.data.dt_inicio && c.data.dt_inicio.toMillis ? c.data.dt_inicio.toMillis() : null;
+        if (aplicarTope(c.id, ini)) syncToFS(c.id);
+      });
       // Timers locales de fichas ya firmadas/aprobadas (cerradas quizá desde
       // otro dispositivo): descartarlos SIN sincronizar para no pisar los
       // tiempos congelados de la ficha
@@ -229,6 +237,10 @@ export function wireMuestristaEvents() {
 
 // Actualización por segundo de los displays (sin re-render completo)
 setInterval(() => {
+  // Fuera del turno el reloj no avanza (ver horario.js): se dice en pantalla,
+  // para que nadie piense que la app se trabó.
+  const fuera = document.getElementById('cap-fuera');
+  if (fuera) fuera.hidden = enHorario();
   document.querySelectorAll('[data-tf]').forEach(elm => {
     const id = elm.dataset.tid;
     if (!timers[id]) return;

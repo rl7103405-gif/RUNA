@@ -3,6 +3,7 @@ import { db, fsOk } from './fb.js';
 import { APP, OPEN_STATES, TM_CAUSES, opcionesAgujado } from './state.js';
 import { es, fmt, gv, scr, toast, confirmDlg } from './utils.js';
 import { timers, getT, elapsedOf, tmOf, tenOf, causesOf, startT, pauseT, seedFromDoc } from './timers.js';
+import { horarioEnPalabras } from './horario.js';
 import { showFirma } from './firma.js';
 import { openTMFor, terminarPausa } from './muestrista.js';
 
@@ -217,6 +218,7 @@ export async function openCap(capturaId) {
       <div class="card ${t.running ? 'am' : ''}">
         <div class="ds" style="margin-bottom:6px">OT ${es(d.ot)} · ${es(d.cliente)}</div>
         <div class="timer ${t.running ? 'tgn' : 'tam'}" id="cap-timer" data-tf="el" data-tid="${es(capturaId)}">${fmt(elapsedOf(capturaId))}</div>
+        <div class="al alw" id="cap-fuera" style="margin-bottom:10px" hidden><span>🌙</span><span style="font-size:12px">Fuera del horario de trabajo (${es(horarioEnPalabras())}): el reloj está detenido y se reanuda solo mañana. Puedes seguir capturando.</span></div>
         <div class="trow" style="margin-bottom:10px">
           <span>TEN: <strong style="color:var(--gn)" data-tf="ten" data-tid="${es(capturaId)}">${fmt(tenOf(capturaId))}</strong></span>
           <span style="color:var(--rd)">TM: <span data-tf="tm" data-tid="${es(capturaId)}">${fmt(tmOf(capturaId))}</span></span>

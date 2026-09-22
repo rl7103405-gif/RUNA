@@ -7,6 +7,10 @@
      --bl   azul informativo             --tx* textos
    ═══════════════════════════════════════════════════════════════════ */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+/* El atributo `hidden` del navegador pierde contra cualquier `display` de
+   nuestras clases (p. ej. .al{display:flex}): sin esta regla, un elemento
+   marcado hidden se ve igual. Lo mordió el aviso de fuera de horario. */
+[hidden]{display:none!important}
 :root{
   --pri:#1d4ed8;--pri-osc:#1e40af;--pri-bg:#dbeafe;--pri-bd:#93c5fd;
   --bg:#f8fafc;--s1:#ffffff;--s2:#f1f5f9;--b1:#e2e8f0;--b2:#cbd5e1;--b3:#94a3b8;

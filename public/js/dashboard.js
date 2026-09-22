@@ -7,6 +7,7 @@ import { db, fsOk } from './fb.js';
 import { APP, USERS, TM_CAUSES, muestristasDe, esDeMiAmbiente, enAmbiente } from './state.js';
 import { es, fmtMin, fmtDate, getRange, toast, tenFromDoc } from './utils.js';
 import { INICIO_INDICADORES, COMPUERTA, resumir, esperandoALety } from './indicadores.js';
+import { segundosLaborales } from './horario.js';
 
 // Identificador de carga: si el filtro cambia mientras una consulta vieja
 // sigue en vuelo, la respuesta vieja se descarta (no pisa la nueva)
@@ -158,7 +159,10 @@ function respaldoPorFicha(snap) {
     const ini = p.inicio_tm && p.inicio_tm.toMillis ? p.inicio_tm.toMillis() : null;
     if (ini === null) return;
     const fin = p.fin_tm && p.fin_tm.toMillis ? p.fin_tm.toMillis() : Date.now();
-    out[capId] = (out[capId] || 0) + Math.max(0, (fin - ini) / 1000);
+    // Con la misma vara que el cronómetro: solo horas de turno. Si se midiera
+    // a reloj de pared, una pausa que cruza la noche respaldaría un tiempo
+    // muerto que el cronómetro ya no cuenta.
+    out[capId] = (out[capId] || 0) + segundosLaborales(ini, fin);
   });
   return out;
 }

@@ -6,6 +6,7 @@
 import { db } from './fb.js';
 import { APP } from './state.js';
 import { penFromCausas } from './utils.js';
+import { segundosLaborales, topeDesde } from './horario.js';
 
 // capId -> { running, startedAt, accum, tmActive, tmStartedAt, tmAccum,
 //            cause, tmCauseStart, causes }
@@ -30,15 +31,50 @@ export function getT(id) {
   return timers[id];
 }
 
+// El tramo en curso cuenta SOLO horas de turno (ver horario.js): una ficha
+// abierta el jueves y firmada el martes ya no se lleva las noches ni el fin de
+// semana. Medido el 2026-09-22: una ficha llevaba 18.9 días de reloj corrido.
 export function elapsedOf(id) {
   const t = timers[id];
   if (!t) return 0;
-  return Math.floor(t.accum + (t.running && t.startedAt ? (Date.now() - t.startedAt) / 1000 : 0));
+  return Math.floor(t.accum + (t.running && t.startedAt ? segundosLaborales(t.startedAt, Date.now()) : 0));
 }
 export function tmOf(id) {
   const t = timers[id];
   if (!t) return 0;
-  return Math.floor(t.tmAccum + (t.running && t.tmActive && t.tmStartedAt ? (Date.now() - t.tmStartedAt) / 1000 : 0));
+  return Math.floor(t.tmAccum + (t.running && t.tmActive && t.tmStartedAt ? segundosLaborales(t.tmStartedAt, Date.now()) : 0));
+}
+
+// Techo por ficha: el cronómetro no puede pasar de las horas de turno desde
+// que la ficha se abrió (`dt_inicio`, hora del servidor). Es lo que cura las
+// fichas que ya venían infladas, y también acota una tablet con la hora mal.
+// Devuelve true si tuvo que recortar (el llamador sincroniza).
+export function aplicarTope(id, dtInicioMs, ahoraMs) {
+  const t = timers[id];
+  if (!t || dtInicioMs === null || dtInicioMs === undefined) return false;
+  const ahora = ahoraMs === undefined ? Date.now() : ahoraMs;
+  // `dt_inicio` es hora del SERVIDOR y `ahora` es la de la tablet. Si la
+  // tablet va atrasada, la ventana sale vacía y el techo daría cero: eso
+  // borraría el tiempo real de una ficha legítima, y como esto corre en cada
+  // snapshot, se guardaría el estropicio. Mejor no recortar.
+  if (ahora <= dtInicioMs) return false;
+  // Misma holgura que las reglas (firestore.rules): 2 minutos de desfase
+  // entre relojes no son un exceso.
+  const tope = topeDesde(dtInicioMs, ahora) + 120;
+  const exceso = elapsedOf(id) - tope;
+  if (exceso <= 0) return false;
+  t.accum = Math.max(0, t.accum - exceso);
+  const bruto = elapsedOf(id);
+  if (t.tmAccum > bruto) {
+    // El tiempo muerto nunca puede pasar del bruto, y su desglose por causa
+    // se reparte igual: si no, la suma de causas quedaría por encima del TM y
+    // el dashboard tomaría la ficha por dato inválido.
+    const factor = t.tmAccum > 0 ? bruto / t.tmAccum : 0;
+    t.tmAccum = bruto;
+    Object.keys(t.causes || {}).forEach(k => { t.causes[k] = Math.floor(t.causes[k] * factor); });
+  }
+  persist();
+  return true;
 }
 
 // Segundos del segmento de TM en curso (aún no cerrados en `causes`)
@@ -119,7 +155,7 @@ export function startTMDesde(id, causeId, desdeMs) {
   t.tmCauseStart = tmOf(id);
   // El tiempo transcurrido desde la aprobación ya es tiempo muerto: se abona
   // de golpe, acotado al tiempo que la ficha lleva corriendo.
-  const atrasoSeg = Math.max(0, Math.floor((Date.now() - desdeMs) / 1000));
+  const atrasoSeg = Math.max(0, segundosLaborales(desdeMs, Date.now()));
   if (atrasoSeg > 0) {
     const margen = Math.max(0, elapsedOf(id) - tmOf(id));
     t.tmAccum += Math.min(atrasoSeg, margen);

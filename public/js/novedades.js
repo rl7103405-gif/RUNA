@@ -43,6 +43,19 @@ export const DIAS_NOVEDAD_INICIAL = 30;
 
 export const NOVEDADES = [
   {
+    id: '2026-09-22-04',
+    fecha: '2026-09-22',
+    tipo: 'corregido',
+    titulo: 'El reloj ya no corre de noche ni en domingo',
+    detalle: 'El cronómetro de una ficha seguía corriendo aunque fuera de noche, en domingo o '
+      + 'aunque la ficha se quedara abierta varios días: una ficha llegó a marcar 18 días. Ahora '
+      + 'solo cuenta el horario de trabajo (de 8 de la mañana a 6 de la tarde, de lunes a sábado), '
+      + 'así que fuera de ese horario el reloj se queda quieto solo, sin que nadie tenga que pedir '
+      + 'pausa. Las fichas que ya traían tiempo de más se corrigen solas al abrir la app. Ojo: el '
+      + 'reloj sigue corriendo mientras la ficha esté abierta dentro del horario, así que conviene '
+      + 'abrirla al empezar y firmarla al terminar.',
+  },
+  {
     id: '2026-09-22-03',
     fecha: '2026-09-22',
     tipo: 'mejorado',
