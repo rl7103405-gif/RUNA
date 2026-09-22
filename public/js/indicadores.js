@@ -28,6 +28,16 @@ const TECHO_MIN = 12 * 60;
 // Compuerta del ranking: mínimos operativos, no una verdad estadística.
 export const COMPUERTA = { fraccionSinAnomalias: 0.6, minimoPorPersona: 5 };
 
+// El tiempo muerto lo DECLARA la tablet del propio evaluado (timers.js lo
+// sincroniza cada 60 s desde el almacenamiento local, y las reglas solo
+// comprueban 0 <= tm_seg <= elapsed_seg). Lo único inatacable son las pausas:
+// las autoriza Lety y sus horas las pone el servidor. Así que el TM solo se
+// toma por bueno hasta donde llegan las pausas de esa ficha. Holgura: el
+// reloj de la tablet y el del servidor no son el mismo, y la sincronización
+// va cada minuto (auditoría de seguridad 2026-09-22).
+const TOLERANCIA_TM_SEG = 120;
+const TOLERANCIA_TM_FRAC = 0.05;
+
 const FIRMADAS = ['aprobado', 'pendiente_lety'];
 
 const numero = v => {
@@ -43,7 +53,10 @@ const ms = ts => (ts && ts.toMillis ? ts.toMillis() : (ts instanceof Date ? ts.g
 //   sin_anomalias — pasó las pruebas; no prueba que el tiempo sea exacto
 //   sospechoso    — con uno o más motivos
 //   no_evaluable  — faltan datos para juzgarla
-export function evaluarTiempo(c) {
+// `respaldoSeg`: segundos de pausa autorizada que tiene esta ficha. Si viene
+// undefined (no se pudieron leer las pausas), el TM no se juzga: mejor no
+// decir nada que acusar sin pruebas.
+export function evaluarTiempo(c, respaldoSeg) {
   const d = c || {};
   const invalido = { estado: 'no_evaluable', motivos: ['datos_invalidos'], tenMin: null, tejidoMin: null };
   const el = d.elapsed_seg, tm = d.tm_seg === undefined ? 0 : d.tm_seg;
@@ -70,6 +83,10 @@ export function evaluarTiempo(c) {
   // ciclo capturado. Es un piso: nadie teje más rápido que su máquina.
   const tejidoMin = pares * 2 * ciclo;
   const motivos = [];
+  if (Number.isFinite(respaldoSeg)
+      && tm > respaldoSeg + TOLERANCIA_TM_SEG + respaldoSeg * TOLERANCIA_TM_FRAC) {
+    motivos.push('tm_sin_respaldo');
+  }
   if (tenMin < tejidoMin) motivos.push('menor_que_tejido');
   if (tenMin > Math.max(TECHO_MIN, 2 * tejidoMin)) motivos.push('duracion_alta');
   return { estado: motivos.length ? 'sospechoso' : 'sin_anomalias', motivos, tenMin, tejidoMin };
@@ -114,27 +131,29 @@ export function entraAIndicadores(c, desde, hasta) {
 }
 
 // ── Resumen del periodo ───────────────────────────────────────────────────
-// `fichas`: capturas del ambiente (datos planos). `quienes`: ids de las
-// muestristas a mostrar. Devuelve el diagnóstico del cronómetro, una fila
-// por persona y el estado de la compuerta del ranking.
-export function resumir(fichas, quienes, desde, hasta) {
+// `fichas`: capturas del ambiente (datos planos, cada una con su `id`).
+// `quienes`: ids de las muestristas a mostrar. `respaldo`: mapa
+// {idDeLaFicha: segundos de pausa autorizada}, o null si no se pudieron leer
+// las pausas (entonces el TM no se juzga). Devuelve el diagnóstico del
+// cronómetro, una fila por persona y el estado de la compuerta del ranking.
+export function resumir(fichas, quienes, desde, hasta, respaldo) {
   const lista = quienes || [];
+  const r = respaldo || null;
   // Solo las personas pedidas: con el filtro en una muestrista, el
   // diagnóstico es el suyo, no el del grupo.
   const del = (fichas || []).filter(c => lista.includes(c.id_muestrista) && entraAIndicadores(c, desde, hasta))
-    .map(c => ({ c, t: evaluarTiempo(c), llenos: camposLlenos(c) }));
+    .map(c => ({ c, t: evaluarTiempo(c, r ? (r[c.id] || 0) : undefined), llenos: camposLlenos(c) }));
 
   const cuenta = xs => {
-    const r = { total: xs.length, sin_anomalias: 0, menor_que_tejido: 0, duracion_alta: 0, no_evaluable: 0 };
+    const r = { total: xs.length, sin_anomalias: 0, tm_sin_respaldo: 0, menor_que_tejido: 0, duracion_alta: 0, no_evaluable: 0 };
     xs.forEach(({ t }) => {
       if (t.estado === 'sin_anomalias') r.sin_anomalias++;
       else if (t.estado === 'no_evaluable') r.no_evaluable++;
-      else {
-        // Una ficha con los dos motivos cuenta en el primero: la barra suma
-        // exactamente el total, sin fichas repetidas.
-        if (t.motivos.includes('menor_que_tejido')) r.menor_que_tejido++;
-        else r.duracion_alta++;
-      }
+      // Una ficha con varios motivos cuenta UNA vez, en el más grave: la
+      // barra suma exactamente el total, sin fichas repetidas.
+      else if (t.motivos.includes('tm_sin_respaldo')) r.tm_sin_respaldo++;
+      else if (t.motivos.includes('menor_que_tejido')) r.menor_que_tejido++;
+      else r.duracion_alta++;
     });
     return r;
   };

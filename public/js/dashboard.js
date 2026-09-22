@@ -62,8 +62,17 @@ export async function loadDB() {
     // tabla por persona) se calculan con todos, y el filtro por persona solo
     // cambia lo que se presenta. Antes el filtro iba en la consulta y, al
     // elegir a Jesús, el "grupo" era él solo.
-    const snap = await enAmbiente(db.collection('capturas')).get();
+    // Las pausas van en la misma tanda: son lo único que respalda el tiempo
+    // muerto que declara la tablet del muestrista (las autoriza Lety y sus
+    // horas las pone el servidor). Si esta consulta falla, el TM no se juzga.
+    const [snap, pausas] = await Promise.all([
+      enAmbiente(db.collection('capturas')).get(),
+      enAmbiente(db.collectionGroup('pausas').where('estado', 'in', ['aprobada', 'finalizada'])).get()
+        .then(s => ({ snap: s, error: false }))
+        .catch(e => { console.error('pausas del diagnóstico:', e); return { snap: null, error: true }; }),
+    ]);
     if (seq !== loadSeq || ses !== APP.sesion) return; // llegó tarde: ya hay una carga más nueva u otra sesión
+    const respaldo = pausas.snap ? respaldoPorFicha(pausas.snap) : null;
     const grupo = snap.docs.filter(d => esDeMiAmbiente(d.data())); // las de prueba no entran a los reales
     const deQuien = d => who === 'all' || d.data().id_muestrista === who;
 
@@ -79,9 +88,9 @@ export async function loadDB() {
 
     // ── Indicadores: desde el corte ──
     const quienes = muestristasDe(!!(APP.user && APP.user.demo));
-    const datos = grupo.map(d => d.data());
-    const r = resumir(datos, quienes, start, end);                      // el grupo
-    const rv = who === 'all' ? r : resumir(datos, [who], start, end);   // lo que se ve
+    const datos = grupo.map(d => ({ id: d.id, ...d.data() }));
+    const r = resumir(datos, quienes, start, end, respaldo);                      // el grupo
+    const rv = who === 'all' ? r : resumir(datos, [who], start, end, respaldo);   // lo que se ve
     const vista = who === 'all'
       ? r.personas.reduce((a, p) => ({ firmadas: a.firmadas + p.firmadas, aprobadas: a.aprobadas + p.aprobadas, sinCorreccion: a.sinCorreccion + p.sinCorreccion }), { firmadas: 0, aprobadas: 0, sinCorreccion: 0 })
       : rv.personas[0];
@@ -102,7 +111,7 @@ export async function loadDB() {
       devueltas ? devueltas + ' en corrección ahora'
         : (vista.aprobadas ? 'ninguna en corrección ahora' : ''));
 
-    pintaDiagnostico(document.getElementById('db-diag'), rv.diag);
+    pintaDiagnostico(document.getElementById('db-diag'), rv.diag, !pausas.error);
     pintaPersonas(document.getElementById('db-personas'), r.personas, who);
     pintaRanking(document.getElementById('db-ranking'), r);
     pintaTM(document.getElementById('db-cmp'), hist);
@@ -136,8 +145,26 @@ export async function loadDB() {
   }
 }
 
+// Segundos de pausa autorizada por ficha. Una pausa aprobada y todavía
+// abierta cuenta hasta ahora; las horas son del servidor (`inicio_tm` y
+// `fin_tm` se escriben con request.time), así que esto no se puede inflar
+// desde la tablet.
+function respaldoPorFicha(snap) {
+  const out = {};
+  snap.docs.forEach(d => {
+    const capId = d.ref.parent.parent ? d.ref.parent.parent.id : null;
+    if (!capId) return;
+    const p = d.data();
+    const ini = p.inicio_tm && p.inicio_tm.toMillis ? p.inicio_tm.toMillis() : null;
+    if (ini === null) return;
+    const fin = p.fin_tm && p.fin_tm.toMillis ? p.fin_tm.toMillis() : Date.now();
+    out[capId] = (out[capId] || 0) + Math.max(0, (fin - ini) / 1000);
+  });
+  return out;
+}
+
 // ── ¿Se puede creer el cronómetro? ──
-function pintaDiagnostico(el, dg) {
+function pintaDiagnostico(el, dg, conPausas) {
   if (!el) return;
   if (!dg.total) { el.innerHTML = ''; return; }
   const seg = (n, cls) => n ? `<span class="seg ${cls}" style="width:${es((n / dg.total * 100).toFixed(2))}%"></span>` : '';
@@ -145,18 +172,20 @@ function pintaDiagnostico(el, dg) {
   el.innerHTML = `<div class="card">
     <div class="ftitle">¿Se puede creer el cronómetro?</div>
     <div class="pila" role="img" aria-label="${es(dg.sin_anomalias)} de ${es(dg.total)} fichas con tiempo medible">
-      ${seg(dg.sin_anomalias, 'ok')}${seg(dg.menor_que_tejido, 'am')}${seg(dg.duracion_alta, 'rd')}${seg(dg.no_evaluable, 'gr')}
+      ${seg(dg.sin_anomalias, 'ok')}${seg(dg.menor_que_tejido, 'am')}${seg(dg.duracion_alta, 'rd')}${seg(dg.tm_sin_respaldo, 'pu')}${seg(dg.no_evaluable, 'gr')}
     </div>
     <div class="leyenda">
       ${ley(dg.sin_anomalias, 'ok', 'Se puede medir')}
       ${ley(dg.menor_que_tejido, 'am', 'Duró menos que el tejido')}
       ${ley(dg.duracion_alta, 'rd', 'Demasiado larga')}
+      ${ley(dg.tm_sin_respaldo, 'pu', 'Tiempo muerto sin pausa')}
       ${ley(dg.no_evaluable, 'gr', 'Sin datos para juzgar')}
     </div>
     <p class="db-expl">Solo <strong>${es(dg.sin_anomalias)} de ${es(dg.total)}</strong> fichas tienen un tiempo que se pueda comparar.
       <strong>Duró menos que el tejido:</strong> la ficha estuvo abierta menos tiempo del que tarda la máquina en tejer esos pares, o sea que se abrió al final solo para capturar.
       <strong>Demasiado larga:</strong> más de 12 horas de reloj (o más del doble del tejido, si el tejido es largo); lo más probable es que el reloj siguiera corriendo fuera del turno.
-      El tiempo solo sirve si la ficha se abre al empezar el trabajo y se pide pausa al terminar el día.</p>
+      <strong>Tiempo muerto sin pausa:</strong> la ficha descuenta más tiempo muerto del que autorizaste en pausas. El tiempo muerto lo escribe la tablet del muestrista; lo único que lo respalda es una pausa aprobada por ti, con las horas del servidor.
+      El tiempo solo sirve si la ficha se abre al empezar el trabajo y se pide pausa al terminar el día.${conPausas ? '' : ' <strong>Ahora mismo no se pudieron leer las pausas, así que el tiempo muerto no se está revisando.</strong>'}</p>
   </div>`;
 }
 

@@ -45,7 +45,12 @@ export function initMuestrista() {
       if (APP.activeCap) {
         const c = APP.allCaps.find(x => x.id === APP.activeCap);
         if (c && c.data.estado === 'cancelada') {
-          toast('Lety canceló esta tarea — la ficha se cerró', false);
+          // Puede ser la tarea entera o SOLO esta ficha (descartada por código
+          // equivocado). El motivo lo escribe Lety en los dos casos y es lo
+          // único que de verdad le sirve al muestrista (auditoría 2026-09-22).
+          const mot = String(c.data.cancelada_motivo || '').trim();
+          toast('Lety cerró esta ficha' + (mot ? ': ' + mot : '') + ' — queda en tu historial', false);
+          // (puede ser solo esta ficha o la tarea completa; el motivo lo dice)
           cerrarFichaRemota();
         } else if (c && APP.activeCapDoc) {
           // Si Lety propagó un ajuste de pares a esta ficha, la copia en
@@ -411,11 +416,15 @@ export async function loadMHist() {
     if (seq !== histSeq || ses !== APP.sesion) return;
     // Mismos estados que el dashboard de Lety: una ficha reabierta ('activo')
     // vive en "Activas", no duplicada aquí
+    // Una ficha descartada por Lety antes de firmarse no tiene dt_fin: cuenta
+    // por la fecha en que la cerró. Antes desaparecía del historial sin dejar
+    // rastro y el muestrista no sabía qué había pasado con su trabajo.
+    const cuando = dt => dt.dt_fin || (dt.estado === 'cancelada' ? dt.cancelada_en : null);
     const docs = snap.docs.filter(d => {
       const dt = d.data();
-      if (!dt.dt_fin) return false;
-      if (!['aprobado', 'pendiente_lety', 'correccion'].includes(dt.estado)) return false;
-      const ms = dt.dt_fin.toMillis ? dt.dt_fin.toMillis() : 0;
+      if (!['aprobado', 'pendiente_lety', 'correccion', 'cancelada'].includes(dt.estado)) return false;
+      const t = cuando(dt);
+      const ms = t && t.toMillis ? t.toMillis() : 0;
       return ms >= start && ms <= end;
     });
     document.getElementById('mhc').textContent = docs.length;
@@ -429,9 +438,10 @@ export async function loadMHist() {
             <div style="display:flex;align-items:center;gap:8px">
               <span class="vcod">${es(dt.codigo_variante)}</span>
               <span style="font-size:13px;font-weight:600;flex:1">${es(dt.modelo)}</span>
-              <span class="bge ${dt.estado === 'aprobado' ? 'bok' : 'bpend'}">${dt.estado === 'aprobado' ? '✅' : '🔄'}</span>
+              <span class="bge ${dt.estado === 'aprobado' ? 'bok' : dt.estado === 'cancelada' ? 'brd' : 'bpend'}">${dt.estado === 'aprobado' ? '✅' : dt.estado === 'cancelada' ? '🗑 cerrada' : '🔄'}</span>
             </div>
-            <div class="mr"><span>${dt.folio ? es(dt.folio) + ' · ' : ''}${fmtDate(dt.dt_fin)}</span><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn)}</strong></span></div>
+            <div class="mr"><span>${dt.folio ? es(dt.folio) + ' · ' : ''}${fmtDate(cuando(dt))}</span><span>TEN: <strong style="color:var(--gn)">${fmtMin(tn)}</strong></span></div>
+            ${dt.estado === 'cancelada' ? `<div style="font-size:12px;color:var(--rd)">Lety la cerró${dt.cancelada_motivo ? ': ' + es(dt.cancelada_motivo) : ''}</div>` : ''}
           </div>`;
         }).join('');
   } catch (e) {

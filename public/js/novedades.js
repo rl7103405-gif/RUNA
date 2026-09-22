@@ -43,6 +43,17 @@ export const DIAS_NOVEDAD_INICIAL = 30;
 
 export const NOVEDADES = [
   {
+    id: '2026-09-22-03',
+    fecha: '2026-09-22',
+    tipo: 'mejorado',
+    titulo: 'Revisión de seguridad: el tiempo muerto ahora se comprueba',
+    detalle: 'El tiempo muerto que descuenta una ficha ahora se compara contra las pausas que '
+      + 'Lety autorizó: si una ficha descuenta más tiempo del que tiene autorizado, el dashboard '
+      + 'lo marca. Además, cuando Lety descarta una ficha, al muestrista ya no le aparece que se '
+      + 'canceló la tarea entera: ve el motivo y la ficha queda en su historial marcada como '
+      + 'descartada. Y las pausas de una ficha descartada ya se cierran bien.',
+  },
+  {
     id: '2026-09-22-02',
     fecha: '2026-09-22',
     tipo: 'mejorado',

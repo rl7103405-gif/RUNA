@@ -1637,6 +1637,9 @@ export async function confirmarCancelarTarea() {
       estado: 'cancelada',
       cancelada_en: firebase.firestore.FieldValue.serverTimestamp(),
       cancelada_por: APP.user.id,
+      // El mismo motivo que la tarea: es lo que el muestrista ve en su
+      // historial cuando su ficha se cierra (revisión 2026-09-22).
+      cancelada_motivo: motivo.slice(0, 300),
     }));
     await batch.commit();
     // Segunda pasada: si el muestrista creó una ficha entre la consulta de
@@ -1769,19 +1772,21 @@ export async function confirmarDescartarFicha() {
   const btn = document.getElementById('desc-ok');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Descartando…'; }
   try {
-    // Se cierran antes las pausas vivas de esa ficha: si no, se quedarían en
-    // la cola de Lety pidiendo autorización de una ficha que ya no existe.
+    const devId = await transicionDescartar(capId, motivo);
+    // Las pausas se cierran DESPUÉS de cancelar la ficha y como 'cancelada',
+    // igual que en cancelarTarea(). Antes se hacía al revés y con
+    // 'rechazada': una pausa ya aprobada rebotaba contra las reglas (solo se
+    // rechaza desde 'pendiente'), el catch se comía el error y la pausa
+    // quedaba viva para siempre (auditoría 2026-09-22).
     try {
       const ps = await db.collection('capturas').doc(capId).collection('pausas')
         .where('estado', 'in', ['pendiente', 'aprobada']).get();
       await Promise.all(ps.docs.map(p => p.ref.update({
-        estado: 'rechazada',
-        decidida_en: firebase.firestore.FieldValue.serverTimestamp(),
+        estado: 'cancelada',
+        fin_tm: firebase.firestore.FieldValue.serverTimestamp(),
         decidida_por: APP.user.id,
       }).catch(e => console.error('pausa de ficha descartada:', e))));
     } catch (e) { console.error('pausas de ficha descartada:', e); }
-
-    const devId = await transicionDescartar(capId, motivo);
     closeOvl('odesc');
     toast('🗑 Ficha descartada — la variante quedó libre');
     // La tarea puede haber quedado completa o incompleta: se recalcula

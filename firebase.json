@@ -34,6 +34,16 @@
         ]
       },
       {
+        "_comment": "El glob de abajo NO cubre la raiz: sin esta entrada, quien abre la app por quini-muestristas.web.app (sin /index.html) se queda con una copia de hasta una hora (auditoria 2026-09-22)",
+        "source": "/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
         "_comment": "El codigo de la app se revalida siempre: sin esto el navegador lo guarda una hora y el service worker precachea esa copia vieja (2026-08-24)",
         "source": "**/*.@(js|css|html)",
         "headers": [

@@ -285,12 +285,21 @@ service cloud.firestore {
               'med_sh', 'med_h', 't_ciclo_min', 't_ciclo_seg', 'peso_sal', 'peso_cer',
               'giros', 'vels', 'pto', 'pto_tabla', 'pares', 'obs', 'guardado_en', 'guardado_rev'];
     }
-    // Tiempos coherentes: números no negativos, TM nunca mayor que el bruto
+    // Tiempos coherentes: números no negativos, TM nunca mayor que el bruto.
+    // Las causas, con la lista EXACTA del catálogo (TM_CAUSES en state.js):
+    // el desglose lo escribe la tablet del propio evaluado, así que al menos
+    // no puede inventar categorías ni llenar el mapa de basura. CUÁNTO tiempo
+    // muerto declara NO se puede validar aquí (las reglas no saben sumar una
+    // subcolección): eso se detecta contra las pausas autorizadas, en
+    // indicadores.js (auditoría 2026-09-22).
     function tiemposOk(data) {
       return data.elapsed_seg is number && data.tm_seg is number
         && data.elapsed_seg >= 0 && data.tm_seg >= 0
         && data.tm_seg <= data.elapsed_seg
-        && (!('tm_causas' in data) || data.tm_causas is map);
+        && (!('tm_causas' in data) || (data.tm_causas is map
+            && data.tm_causas.keys().hasOnly(['maquina', 'color', 'material', 'lety',
+                                              'cliente', 'falla', 'descanso', 'personal'])
+            && data.tm_causas.keys().size() <= 8));
     }
 
     // ── usuarios: mapa authUid -> {empleadoId, rol}. Cada cuenta solo lee
@@ -788,13 +797,21 @@ service cloud.firestore {
       // dashboard. La firma del muestrista se conserva como evidencia. Una
       // ficha cancelada no vuelve a ningún estado: `estadoCapturaValido` no la
       // incluye, así que ninguna otra rama la acepta como origen ni destino.
+      // El motivo viaja también a la ficha (2026-09-22): el muestrista lo ve en
+      // su historial y así sabe por qué se cerró su trabajo. Es OPCIONAL: la
+      // reparación de fichas rezagadas (repararCancelacion) no lo tiene a mano
+      // y debe seguir pudiendo cerrarlas.
       allow update: if esAdmin()
                     && mismoAmbiente(resource.data)
                     && resource.data.estado in ['activo', 'pausado', 'correccion', 'pendiente_lety']
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'cancelada_en', 'cancelada_por'])
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['estado', 'cancelada_en', 'cancelada_por', 'cancelada_motivo'])
                     && request.resource.data.estado == 'cancelada'
                     && request.resource.data.cancelada_en == request.time
                     && request.resource.data.cancelada_por == miEmpleadoId()
+                    && (!('cancelada_motivo' in request.resource.data)
+                        || (request.resource.data.cancelada_motivo is string
+                            && request.resource.data.cancelada_motivo.size() <= 300))
                     && getAfter(/databases/$(database)/documents/desarrollos/$(resource.data.id_desarrollo)).data.get('estado', '') == 'cancelada';
       allow delete: if false;
     }
@@ -910,10 +927,12 @@ service cloud.firestore {
     // Deliberadamente estrecha:
     //   · `list`, no `read`: solo habilita la consulta, no leer un documento
     //     suelto por una ruta arbitraria.
-    //   · `estado == 'pendiente'`: coincide con el `where` de la consulta. Las
-    //     reglas no filtran, así que la consulta debe garantizar la condición.
-    //     Si algún día Lety necesita un historial de pausas ya decididas, hay
-    //     que ampliar esto A PROPÓSITO, no por accidente.
+    //   · Estados: se AMPLIÓ A PROPÓSITO el 2026-09-22, de solo 'pendiente' a
+    //     los cuatro estados válidos. El dashboard necesita las pausas ya
+    //     decididas para comprobar que el tiempo muerto que declara la tablet
+    //     tiene una pausa autorizada detrás (ver indicadores.js). Sigue siendo
+    //     una lista cerrada: nada fuera del ciclo de vida de una pausa, y
+    //     sigue sin conceder ninguna escritura.
     //   · Solo lectura y solo admin: no concede ninguna escritura, y el
     //     muestrista sigue consultando por ruta directa (donde sí se puede
     //     comprobar que la ficha es suya).
@@ -923,7 +942,8 @@ service cloud.firestore {
     // con ese nombre, sus documentos pendientes quedarían visibles al admin:
     // usar otro nombre, o añadir un discriminador validado.
     match /{path=**}/pausas/{pausaId} {
-      allow list: if puedeLeerTodo() && resource.data.estado == 'pendiente'
+      allow list: if puedeLeerTodo()
+                  && resource.data.estado in ['pendiente', 'aprobada', 'finalizada', 'cancelada']
                   && (!esDemo() || resource.data.get('demo', false) == true);
     }
 
@@ -931,12 +951,11 @@ service cloud.firestore {
     // Solo se acepta el siguiente consecutivo exacto: sin saltos ni retrocesos
     // Solo el muestrista escribe aquí: es quien crea fichas. Lety nunca crea
     // capturas, así que no necesita tocar el contador.
-    // LIMITACIÓN CONOCIDA: un muestrista podría incrementar el contador sin
-    // crear la captura correspondiente y quemar folios (no rompe la unicidad,
-    // solo deja huecos en la serie). Cerrarlo requiere un puntero cruzado
-    // `last_cap_id` entre contador y captura, que no se implementó porque no
-    // hay forma de probarlo en local (el emulador de Firestore necesita Java,
-    // que no está instalado) y toca la ruta crítica de creación de fichas.
+    // El puntero cruzado `last_cap_id` (ver abajo) ata cada incremento del
+    // contador a la captura creada en la MISMA operación: ya no se pueden
+    // quemar folios sin crear la ficha, ni crear dos fichas con el mismo
+    // folio_seq. Aquí decía que ese hueco seguía abierto; dejó de ser cierto
+    // el 2026-09-07 y el comentario se corrigió el 2026-09-22.
     match /contadores/{docId} {
       // Solo quien crea fichas necesita leerlo (su transacción), y solo el suyo
       allow read: if esMuestristaActual() && docId == contadorCapturas();
