@@ -4,7 +4,7 @@ import { APP, USERS, TM_CAUSES, OPEN_STATES } from './state.js';
 import { es, fmt, fmtMin, fmtDate, getRange, toast, openOvl, closeOvl, tenFromDoc } from './utils.js';
 import { timers, getT, elapsedOf, tmOf, tenOf, startT, pauseT, startTM, startTMDesde, endTM, syncToFS, restoreTimers, seedFromDoc, dropTimer, aplicarTope } from './timers.js';
 import { startCap, openCap, reopenCorreccion, refrescaBotonera, refrescaAvisoPares, paresVigentes, cerrarFichaRemota } from './captura.js';
-import { enHorario } from './horario.js';
+import { enHorario, enComida, horarioEnPalabras } from './horario.js';
 
 export function mTab(i, btn) {
   [0, 1, 2].forEach(j => document.getElementById('mt' + j).classList.remove('on'));
@@ -238,9 +238,24 @@ export function wireMuestristaEvents() {
 // Actualización por segundo de los displays (sin re-render completo)
 setInterval(() => {
   // Fuera del turno el reloj no avanza (ver horario.js): se dice en pantalla,
-  // para que nadie piense que la app se trabó.
+  // para que nadie piense que la app se trabó. A la hora de la comida se dice
+  // con esas palabras: "se reanuda mañana" a las 3 de la tarde sería mentira.
   const fuera = document.getElementById('cap-fuera');
-  if (fuera) fuera.hidden = enHorario(APP.user ? APP.user.id : null);
+  if (fuera) {
+    const uid = APP.user ? APP.user.id : null;
+    fuera.hidden = enHorario(uid);
+    if (!fuera.hidden) {
+      const comiendo = enComida(uid);
+      const ico = document.getElementById('cap-fuera-ico');
+      const txt = document.getElementById('cap-fuera-txt');
+      if (ico) ico.textContent = comiendo ? '🍽️' : '🌙';
+      if (txt) {
+        txt.textContent = comiendo
+          ? 'Hora de comida: el reloj está detenido y se reanuda solo a las 16:00. Puedes seguir capturando.'
+          : 'Fuera de tu horario (' + horarioEnPalabras(uid) + '): el reloj está detenido y se reanuda solo cuando entres. Puedes seguir capturando.';
+      }
+    }
+  }
   document.querySelectorAll('[data-tf]').forEach(elm => {
     const id = elm.dataset.tid;
     if (!timers[id]) return;

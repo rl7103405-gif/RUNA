@@ -49,7 +49,8 @@ export const NOVEDADES = [
     titulo: 'Cada quien con su horario',
     detalle: 'Lety confirmó los horarios, así que el reloj de cada ficha ya cuenta con el horario '
       + 'de quien la trabaja: Jesús de 8 a 6 de lunes a viernes y el sábado de 8 a 1; Israel de 7 '
-      + 'a 7 de lunes a sábado. Fuera de su horario el reloj se queda quieto solo.',
+      + 'a 7 de lunes a sábado. La hora de la comida, de 3 a 4, tampoco cuenta. Fuera de su horario '
+      + 'el reloj se queda quieto solo y la pantalla lo dice.',
   },
   {
     id: '2026-09-22-04',

@@ -14,17 +14,40 @@
 // detiene el HORARIO. Fuera del turno, el tiempo simplemente no cuenta.
 //
 // LOS HORARIOS SON DISTINTOS POR PERSONA, y el de Jesús además cambia el
-// sábado. Los confirmó Lety por WhatsApp el 2026-09-22:
+// sábado. Todo esto lo confirmó Lety por WhatsApp el 2026-09-22:
 //   · Jesús  — de 8 a 6 de lunes a viernes, y el sábado de 8 a 1.
 //   · Israel — de 7 a 7, de lunes a sábado.
+//   · Los dos comen de 3 a 4: esa hora NO cuenta como trabajo.
 // Si cambia el horario de alguien, se cambia aquí y nada más aquí.
 //
-// Cada día es null (no se trabaja) o [minutoDeEntrada, minutoDeSalida], con el
-// índice del día tal como lo da Date.getDay(): 0 = domingo ... 6 = sábado.
+// Cada día es una LISTA de tramos [minutoDeEntrada, minutoDeSalida] (la comida
+// parte el día en dos), o una lista vacía si ese día no se trabaja. El índice
+// del día es el de Date.getDay(): 0 = domingo ... 6 = sábado.
 const H = (h, m) => h * 60 + (m || 0);
 
-const TURNO_JESUS = [null, [H(8), H(18)], [H(8), H(18)], [H(8), H(18)], [H(8), H(18)], [H(8), H(18)], [H(8), H(13)]];
-const TURNO_ISRAEL = [null, [H(7), H(19)], [H(7), H(19)], [H(7), H(19)], [H(7), H(19)], [H(7), H(19)], [H(7), H(19)]];
+const COMIDA = [H(15), H(16)]; // de 3 a 4 de la tarde, los dos
+
+// Parte un tramo con la hora de comida, si la comida cae dentro
+function conComida(desde, hasta) {
+  const [ci, cf] = COMIDA;
+  if (cf <= desde || ci >= hasta) return [[desde, hasta]];   // la comida queda fuera
+  const tramos = [];
+  if (ci > desde) tramos.push([desde, ci]);
+  if (hasta > cf) tramos.push([cf, hasta]);
+  // Un turno que cayera ENTERO dentro de la comida se quedaría sin tramos, y
+  // eso significa "ese día no se trabaja": justo la clase de mentira silenciosa
+  // que costó 18.9 días de reloj. Que falle a gritos si alguien edita mal.
+  if (!tramos.length) console.error('horario.js: el turno ' + desde + '-' + hasta + ' cae entero en la hora de comida; revisa HORARIOS');
+  return tramos;
+}
+
+const JESUS_ENTRE_SEMANA = conComida(H(8), H(18));  // 8 a 15 y 16 a 18 = 9 h
+const JESUS_SABADO = conComida(H(8), H(13));        // sale antes de comer = 5 h
+const ISRAEL = conComida(H(7), H(19));              // 7 a 15 y 16 a 19 = 11 h
+
+const TURNO_JESUS = [[], JESUS_ENTRE_SEMANA, JESUS_ENTRE_SEMANA, JESUS_ENTRE_SEMANA,
+  JESUS_ENTRE_SEMANA, JESUS_ENTRE_SEMANA, JESUS_SABADO];
+const TURNO_ISRAEL = [[], ISRAEL, ISRAEL, ISRAEL, ISRAEL, ISRAEL, ISRAEL];
 
 export const HORARIOS = {
   jesus: TURNO_JESUS,
@@ -45,18 +68,17 @@ export function turnoDe(uid) {
   return HORARIOS[uid] || TURNO_POR_OMISION;
 }
 
-// Ventana del día (hora local de la tablet) para ese turno, o null si ese día
-// no se trabaja
-function ventanaDe(fecha, turno) {
-  const rango = turno[fecha.getDay()];
-  if (!rango) return null;
+// Tramos de ESE día, ya en milisegundos (hora local de la tablet)
+function ventanasDe(fecha, turno) {
+  const tramos = turno[fecha.getDay()] || [];
+  if (!tramos.length) return [];
   const base = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()).getTime();
-  return { ini: base + rango[0] * 60000, fin: base + rango[1] * 60000 };
+  return tramos.map(([a, b]) => ({ ini: base + a * 60000, fin: base + b * 60000 }));
 }
 
 // Segundos de turno entre dos instantes, para el horario de `uid`: recorta
-// noches, domingos y cualquier día que esa persona no trabaje. Es una función
-// pura y se prueba fuera del navegador.
+// noches, la hora de comida y cualquier día que esa persona no trabaje. Es una
+// función pura y se prueba fuera del navegador.
 //
 // Se recorre día por día en hora LOCAL, no en UTC: así el cambio de día cae
 // donde cae para la gente de la planta. México ya no cambia de horario de
@@ -73,11 +95,10 @@ export function segundosLaborales(desdeMs, hastaMs, uid) {
   const cursor = new Date(ini);
   cursor.setHours(0, 0, 0, 0);
   for (let guarda = 0; guarda < 400 && cursor.getTime() <= fin; guarda++) {
-    const v = ventanaDe(cursor, turno);
-    if (v) {
+    ventanasDe(cursor, turno).forEach(v => {
       const a = Math.max(ini, v.ini), b = Math.min(fin, v.fin);
       if (b > a) total += (b - a) / 1000;
-    }
+    });
     cursor.setDate(cursor.getDate() + 1);
     cursor.setHours(0, 0, 0, 0); // por si el día tuviera 23 o 25 horas
   }
@@ -86,34 +107,48 @@ export function segundosLaborales(desdeMs, hastaMs, uid) {
 
 // ¿Está ahora dentro de su turno? Lo usa la pantalla del muestrista para
 // avisar que el reloj está quieto a propósito y no porque la app se trabó.
+// A la hora de la comida devuelve false: el reloj tampoco corre entonces.
 export function enHorario(uid, fecha) {
   const f = fecha || new Date();
-  const rango = turnoDe(uid)[f.getDay()];
-  if (!rango) return false;
   const min = f.getHours() * 60 + f.getMinutes();
-  return min >= rango[0] && min < rango[1];
+  return (turnoDe(uid)[f.getDay()] || []).some(([a, b]) => min >= a && min < b);
+}
+
+// ¿Está parado justo por la comida? (para decirlo con esas palabras)
+export function enComida(uid, fecha) {
+  const f = fecha || new Date();
+  const tramos = turnoDe(uid)[f.getDay()] || [];
+  // Solo si la comida parte el turno de ESE día: el sábado Jesús sale a la
+  // una, así que a las 3:30 no está comiendo, ya se fue hasta el lunes. Decirle
+  // "vuelve a las 16:00" sería la misma clase de mentira que se vino a quitar.
+  if (tramos.length < 2) return false;
+  const min = f.getHours() * 60 + f.getMinutes();
+  return min >= COMIDA[0] && min < COMIDA[1];
 }
 
 const hhmm = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const mismoDia = (a, b) => a.length === b.length && a.every((r, i) => r[0] === b[i][0] && r[1] === b[i][1]);
 
 // El turno en palabras, para explicarlo en pantalla sin repetir números.
-// Agrupa los días seguidos con el mismo rango: "lunes a viernes de 08:00 a
-// 18:00 y sábado de 08:00 a 13:00".
+// Agrupa los días seguidos iguales y dice la comida aparte: "lunes a viernes
+// de 08:00 a 18:00 (comida de 15:00 a 16:00) y sábado de 08:00 a 13:00".
 export function horarioEnPalabras(uid) {
   const turno = turnoDe(uid);
-  const tramos = [];
+  const bloques = [];
   for (let d = 0; d < 7; d++) {
-    const r = turno[d];
-    if (!r) continue;
-    const ultimo = tramos[tramos.length - 1];
-    if (ultimo && ultimo.hasta === d - 1 && ultimo.r[0] === r[0] && ultimo.r[1] === r[1]) ultimo.hasta = d;
-    else tramos.push({ desde: d, hasta: d, r });
+    const tramos = turno[d] || [];
+    if (!tramos.length) continue;
+    const ultimo = bloques[bloques.length - 1];
+    if (ultimo && ultimo.hasta === d - 1 && mismoDia(ultimo.tramos, tramos)) ultimo.hasta = d;
+    else bloques.push({ desde: d, hasta: d, tramos });
   }
-  if (!tramos.length) return 'sin horario';
-  return tramos.map(t => {
-    const dias = t.desde === t.hasta ? DIAS[t.desde] : DIAS[t.desde] + ' a ' + DIAS[t.hasta];
-    return dias + ' de ' + hhmm(t.r[0]) + ' a ' + hhmm(t.r[1]);
+  if (!bloques.length) return 'sin horario';
+  return bloques.map(b => {
+    const dias = b.desde === b.hasta ? DIAS[b.desde] : DIAS[b.desde] + ' a ' + DIAS[b.hasta];
+    const abre = b.tramos[0][0], cierra = b.tramos[b.tramos.length - 1][1];
+    const parte = b.tramos.length > 1 ? ' (comida de ' + hhmm(b.tramos[0][1]) + ' a ' + hhmm(b.tramos[1][0]) + ')' : '';
+    return dias + ' de ' + hhmm(abre) + ' a ' + hhmm(cierra) + parte;
   }).join(' y ');
 }
 
