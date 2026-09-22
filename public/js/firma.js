@@ -53,6 +53,7 @@ export function clearSig() {
 }
 
 let savingSig = false;
+let guardandoDesde = 0; // cuándo empezó el guardado en curso (para la salida de emergencia)
 
 export async function saveSig() {
   if (!fsOk() || savingSig) return;
@@ -64,6 +65,7 @@ export async function saveSig() {
   const url = cv.toDataURL('image/png');
   const { capturaId, who } = APP.sigData;
   savingSig = true;
+  guardandoDesde = Date.now();
   try {
     if (who === 'muestrista') {
       // Folio ANTES de limpiar estado (para la pantalla de éxito): primero el
@@ -145,6 +147,12 @@ export async function saveSig() {
 }
 
 export async function backFirma() {
+  // Salir a media transacción no la cancela: la ficha terminaba aprobada
+  // mientras Lety creía haber cancelado (auditoría 2026-09-22).
+  // Pero sin red la escritura puede quedarse esperando para siempre: pasados
+  // 20 s se deja salir, avisando que la firma podría guardarse sola despues.
+  if (savingSig && Date.now() - guardandoDesde < 20000) { toast('Guardando la firma… espera un momento'); return; }
+  if (savingSig) toast('No se pudo confirmar la firma: revisa tu conexión. Si vuelve la red, podría guardarse sola.', false);
   if (APP.user && APP.user.rol === 'lety') { scr('sR'); return; }
   // Muestrista canceló la firma: reanudar el timer si estaba corriendo y
   // re-renderizar la ficha para que botón y colores reflejen el estado real

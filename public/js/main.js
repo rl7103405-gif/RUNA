@@ -2,7 +2,7 @@
 // cablea la delegación de eventos y arranca Firebase + service worker
 import { tryInitFB } from './fb.js';
 import { scr, closeOvl } from './utils.js';
-import { selectUser, numPad, backPin, clearPin, logout, openChangePinSelf, savePin } from './auth.js';
+import { selectUser, cambiarUsuario, numPad, backPin, clearPin, logout, openChangePinSelf, savePin } from './auth.js';
 import { mTab, loadMHist, openTMFor, endTMA, wireMuestristaEvents } from './muestrista.js';
 import { backCaptura, saveDraft, saveAndSign, wireCapturaEvents } from './captura.js';
 import { clearSig, saveSig, backFirma } from './firma.js';
@@ -19,7 +19,7 @@ import { abrirNovedades, cerrarNovedades, refrescaCampana } from './novedades.js
 // exponemos explícitamente lo que el markup necesita.
 Object.assign(window, {
   scr, closeOvl,
-  selectUser, numPad, backPin, clearPin, logout,
+  selectUser, cambiarUsuario, numPad, backPin, clearPin, logout,
   openChangePinSelf, savePin,
   mTab, loadMHist, openTMFor, endTMA,
   backCaptura, saveDraft, saveAndSign,

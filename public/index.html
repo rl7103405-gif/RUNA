@@ -100,7 +100,7 @@
       <button class="nk" onclick="numPad(0)">0</button>
       <button class="nk del" onclick="backPin()">⌫</button>
     </div>
-    <button onclick="scr('s0')" style="background:none;border:none;color:var(--tx2);font-size:13px;cursor:pointer;margin-top:16px">← Cambiar usuario</button>
+    <button onclick="cambiarUsuario()" style="background:none;border:none;color:var(--tx2);font-size:13px;cursor:pointer;margin-top:16px">← Cambiar usuario</button>
   </div>
 </div>
 
@@ -259,12 +259,16 @@
         <select class="fi" id="dp" onchange="loadDB()"><option value="day">Hoy</option><option value="week">Semana</option><option value="month" selected>Mes</option><option value="year">Año</option></select>
         <select class="fi" id="dw" onchange="loadDB()"><option value="all">Todos</option><option value="israel">Israel</option><option value="jesus">Jesús</option></select>
       </div>
-      <div class="g2" style="gap:8px;margin-bottom:12px">
-        <div class="card" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">Completadas</div><div style="font-size:24px;font-weight:700;color:var(--pri)" id="db0">—</div></div>
-        <div class="card gn" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TEN promedio</div><div style="font-size:24px;font-weight:700;color:var(--gn)" id="db1">—</div></div>
-        <div class="card bl" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">IPP 1ª pasada</div><div style="font-size:24px;font-weight:700;color:var(--bl)" id="db2">—</div></div>
-        <div class="card" style="margin:0;text-align:center"><div style="font-size:10px;color:var(--tx2)">TM total (min)</div><div style="font-size:24px;font-weight:700" id="db3">—</div></div>
+      <div class="db-nota">Los indicadores cuentan desde el lunes 7 de septiembre; lo anterior fue arranque y pruebas. El historial de abajo muestra todo el periodo.</div>
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-lbl">Aprobadas</div><div class="kpi-val" id="db0">—</div><div class="kpi-sub" id="db0s"></div></div>
+        <div class="kpi am"><div class="kpi-lbl">Esperando a Lety</div><div class="kpi-val" id="db1">—</div><div class="kpi-sub" id="db1s"></div></div>
+        <div class="kpi gn"><div class="kpi-lbl">Tiempo típico</div><div class="kpi-val" id="db2">—</div><div class="kpi-sub" id="db2s"></div></div>
+        <div class="kpi bl"><div class="kpi-lbl">Sin corrección</div><div class="kpi-val" id="db3">—</div><div class="kpi-sub" id="db3s"></div></div>
       </div>
+      <div id="db-diag"></div>
+      <div id="db-personas"></div>
+      <div id="db-ranking"></div>
       <div id="db-cmp"></div>
       <div class="brow" style="margin-bottom:12px">
         <button class="btn btn-bl btn-sm" id="btn-export" style="flex:2;margin:0" onclick="exportExcel()">📊 Exportar a Excel</button>

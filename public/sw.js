@@ -3,7 +3,7 @@
 // v5: catálogo importable desde Excel, exportación a .xlsx y contador de
 // pendientes. SheetJS/ExcelJS NO se precachean (pesan ~1 MB cada una): se
 // descargan solo cuando Lety usa esas funciones y quedan en cache de runtime.
-const CACHE = 'quini-muestristas-v22';
+const CACHE = 'quini-muestristas-v23';
 
 const APP_SHELL = [
   './',
@@ -22,6 +22,7 @@ const APP_SHELL = [
   'js/dashboard.js',
   'js/catalogo.js',
   'js/export.js',
+  'js/indicadores.js',
   'js/ficha-excel.js',
   'js/ficha-tecnica.js',
   'js/novedades.js',
@@ -77,9 +78,16 @@ self.addEventListener('fetch', e => {
     e.respondWith((async () => {
       try {
         const fresh = await fetch(e.request);
-        const cache = await caches.open(CACHE);
-        cache.put('index.html', fresh.clone());
-        return fresh;
+        // Solo una respuesta buena y en HTML reemplaza la copia sin red. Antes
+        // un 503 del hosting se guardaba como index.html y la app sin red
+        // servia la pagina de error (auditoría 2026-09-22).
+        const esHtml = (fresh.headers.get('content-type') || '').includes('text/html');
+        if (fresh.ok && esHtml) {
+          const cache = await caches.open(CACHE);
+          cache.put('index.html', fresh.clone());
+          return fresh;
+        }
+        return (await caches.match('index.html')) || fresh;
       } catch (err) {
         return (await caches.match('index.html')) || Response.error();
       }

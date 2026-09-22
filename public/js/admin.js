@@ -1276,7 +1276,7 @@ export async function openTarea(devId) {
       <div class="fsec"><div class="ftitle">Tiempo de la tarea</div>
         <div class="mr"><span>Trabajo efectivo (TEN)</span><strong style="color:var(--gn)">${fmtMin(tenTot)}</strong></div>
         <div class="mr"><span>Tiempo muerto</span><span style="color:var(--rd)">${fmtMin(tmTot)}</span></div>
-        <div class="mr"><span>Bruto de punta a punta</span><span>${fmtMin(bruto)}</span></div>
+        <div class="mr"><span>Suma del tiempo bruto de las fichas</span><span>${fmtMin(bruto)}</span></div>
         <div class="mr"><span style="font-size:11px;color:var(--tx3)">${es(caps.length)} ficha${caps.length === 1 ? '' : 's'} capturada${caps.length === 1 ? '' : 's'}${d.terminado_en ? ' · cerrada ' + fmtDate(d.terminado_en) : ''}</span><span></span></div>
         ${causas.length ? '<div class="ftitle" style="margin-top:10px">Desglose del tiempo muerto</div>' + causas.map(([k, v]) => {
           const c = TM_CAUSES.find(x => x.id === k);
@@ -1410,6 +1410,10 @@ export async function guardarDatosTarea() {
         const ABIERTAS = ['activo', 'pausado', 'correccion'];
         const pend = caps.docs.filter(c => {
           const dt = c.data();
+          // Las descartadas no se tocan: las reglas rechazan modificar una
+          // cancelada, y ese rechazo tumbaba el lote entero con las válidas
+          // adentro (auditoría 2026-09-22).
+          if (dt.estado === 'cancelada') return false;
           const cerrada = !ABIERTAS.includes(dt.estado);
           return (propaga.ot && !String(dt.ot || '').trim())
             || (propaga.po && !String(dt.po || '').trim())
@@ -1658,7 +1662,9 @@ export async function confirmarCancelarTarea() {
     } catch (e3) { console.error('pausas de tarea cancelada:', e3); }
     closeOvl('ocan');
     const nCerr = cerradas.length;
-    if (rez.pendientes > 0) {
+    if (!rez.verificado) {
+      toast('Tarea cancelada, pero no se pudo comprobar si quedaron fichas vivas — ábrela y revisa', false);
+    } else if (rez.pendientes > 0) {
       toast('Tarea cancelada, pero ' + rez.pendientes + ' ficha' + (rez.pendientes === 1 ? '' : 's') + ' no se pudo cerrar — ábrela y toca "Cerrar fichas que quedaron vivas"', false);
     } else {
       toast('🗑 Tarea cancelada' + (nCerr ? ' · ' + nCerr + ' ficha' + (nCerr === 1 ? '' : 's') + ' cerrada' + (nCerr === 1 ? '' : 's') : ''));
@@ -1705,7 +1711,9 @@ async function cerrarRezagadas(devId) {
       continue;
     }
   }
-  return { cerradas, pendientes: Math.max(0, pendientes) };
+  // verificado=false: falló la consulta final y NO se sabe si quedaron fichas
+  // vivas. Antes se devolvía 0 y la pantalla anunciaba éxito sin comprobarlo.
+  return { cerradas, pendientes: Math.max(0, pendientes), verificado: pendientes !== -1 };
 }
 
 // Botón de la tarea cancelada: vuelve a intentar cerrar lo que quedó vivo.
@@ -1725,7 +1733,9 @@ export async function repararCancelacion() {
       fin_tm: firebase.firestore.FieldValue.serverTimestamp(),
       decidida_por: APP.user.id,
     }).catch(e => console.error('cerrar pausa rezagada:', e))));
-    toast(rez.pendientes > 0
+    toast(!rez.verificado
+      ? 'No se pudo comprobar si quedan fichas vivas — revisa tu conexión e intenta de nuevo'
+      : rez.pendientes > 0
       ? 'Quedan ' + rez.pendientes + ' ficha(s) sin cerrar — revisa tu conexión e intenta de nuevo'
       : (rez.cerradas.length ? '✅ ' + rez.cerradas.length + ' ficha(s) cerrada(s)' : 'No había fichas vivas'));
     if (APP.tareaId === devId) await openTarea(devId);

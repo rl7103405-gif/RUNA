@@ -386,13 +386,29 @@ export function endTMA() {
   terminarPausa(id);
 }
 
+// Al cerrar sesión: la tablet vuelve a la pestaña de Tareas y sin el
+// historial del anterior. Antes Jesús podía ver el de Israel hasta que
+// cambiara de pestaña (auditoría 2026-09-22).
+export function resetVistaMuestrista() {
+  histSeq++;
+  [0, 1, 2].forEach(j => { const t = document.getElementById('mt' + j); if (t) t.classList.toggle('on', j === 0); });
+  document.querySelectorAll('#sM .nb').forEach((b, j) => b.classList.toggle('on', j === 0));
+  const l = document.getElementById('mhl'); if (l) l.innerHTML = '';
+  const c = document.getElementById('mhc'); if (c) c.textContent = '—';
+  const f = document.getElementById('mhf'); if (f) f.value = 'day';
+}
+
 // ── Historial del muestrista ──
+let histSeq = 0; // una consulta vieja (otro filtro, otra sesión) no repinta
 export async function loadMHist() {
   if (!fsOk()) return;
+  const seq = ++histSeq;
+  const ses = APP.sesion;
   try {
     const period = document.getElementById('mhf')?.value || 'day';
     const { start, end } = getRange(period);
     const snap = await db.collection('capturas').where('id_muestrista', '==', APP.user.id).get();
+    if (seq !== histSeq || ses !== APP.sesion) return;
     // Mismos estados que el dashboard de Lety: una ficha reabierta ('activo')
     // vive en "Activas", no duplicada aquí
     const docs = snap.docs.filter(d => {
@@ -420,6 +436,7 @@ export async function loadMHist() {
         }).join('');
   } catch (e) {
     console.error('Historial error:', e);
+    if (seq !== histSeq || ses !== APP.sesion) return; // ya hay otra consulta en pantalla
     toast('Error cargando historial', false);
   }
 }

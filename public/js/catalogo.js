@@ -299,7 +299,7 @@ async function importar() {
       escritos += lote.length;
       // Se limpia tras cada lote: si un lote falla a la mitad, los códigos ya
       // escritos no deben seguir sirviéndose desde una caché vieja
-      cache.clear();
+      limpiarCacheCatalogo();
       if (btn) btn.textContent = `📥 Importando… ${escritos} de ${total}`;
     }
     // La metadata se escribe SOLO si todos los lotes pasaron: su importId es
@@ -311,7 +311,7 @@ async function importar() {
       importId: String(Date.now()),
       actualizado: firebase.firestore.FieldValue.serverTimestamp(),
     });
-    cache.clear();
+    limpiarCacheCatalogo();
     closeOvl('ocat');
     showExito('Catálogo actualizado', escritos + ' código' + (escritos === 1 ? '' : 's') + ' listos para autollenar');
   } catch (e) {
@@ -337,13 +337,16 @@ async function importar() {
 // "no existe" cacheados).
 const cache = new Map();
 let catImportId = null;
+let cacheGen = 0; // sube al vaciar: una lectura que venía en camino ya no guarda
+
+export function limpiarCacheCatalogo() { cache.clear(); cacheGen++; }
 
 export function watchCatalogo() {
   if (!db) return null;
   return db.collection('catalogo_meta').doc('info').onSnapshot(snap => {
     const d = snap.exists ? snap.data() : null;
     const id = d ? d.importId : null;
-    if (id !== catImportId) { catImportId = id; cache.clear(); }
+    if (id !== catImportId) { catImportId = id; limpiarCacheCatalogo(); }
     const info = document.getElementById('cat-info');
     if (info) {
       info.innerHTML = d
@@ -357,10 +360,11 @@ export async function lookupCodigo(codRaw) {
   const cod = normalizarCodigo(codRaw);
   if (!cod || !codigoValido(cod) || !db) return null;
   if (cache.has(cod)) return cache.get(cod);
+  const gen = cacheGen;
   try {
     const snap = await db.collection('catalogo').doc(cod).get();
     const data = snap.exists ? snap.data() : null;
-    cache.set(cod, data);
+    if (gen === cacheGen) cache.set(cod, data);
     return data;
   } catch (e) {
     console.error('lookup catalogo:', e);

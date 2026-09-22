@@ -4,11 +4,26 @@ import { db, auth, fsOk, pingFS } from './fb.js';
 import { APP, USERS, EMPLEADO_EMAIL } from './state.js';
 import { scr, toast, gv, openOvl, closeOvl } from './utils.js';
 import { clearAllTimers } from './timers.js';
-import { initMuestrista } from './muestrista.js';
+import { initMuestrista, resetVistaMuestrista } from './muestrista.js';
+import { limpiarCacheCatalogo } from './catalogo.js';
 import { initLety, setBadgePendientes, invalidarLookups, limpiarCacheAdmin, resetAsignar } from './admin.js';
 import { refrescaCampana } from './novedades.js';
 
+// "Cambiar usuario" desde la pantalla del PIN: además de volver, cancela el
+// intento en curso (antes solo cambiaba de pantalla y el login seguía).
+export function cambiarUsuario() {
+  pinGen++;
+  APP.pinTarget = null;
+  if (!checkingPin) { APP.pinBuf = []; updateDots(); }
+  scr('s0');
+}
+
+// Sube cada vez que se elige usuario o se cancela: un intento viejo que
+// termina tarde no abre sesión aunque se haya vuelto a elegir el mismo ícono.
+let pinGen = 0;
+
 export function selectUser(uid) {
+  pinGen++;
   APP.pinTarget = uid;
   APP.pinBuf = [];
   const u = USERS[uid];
@@ -22,7 +37,15 @@ export function selectUser(uid) {
 let checkingPin = false;
 
 export function numPad(n) {
-  if (checkingPin || APP.pinBuf.length >= 6) return;
+  // Un solo intento a la vez: Firebase Auth tiene un usuario por
+  // dispositivo, y dos inicios de sesión cruzados podrían sacar al nuevo.
+  // Pero el teclado no se queda mudo: dice por qué no responde.
+  if (checkingPin) {
+    const err = document.getElementById('pin-err');
+    if (err) err.textContent = 'Espera… terminando la entrada anterior';
+    return;
+  }
+  if (APP.pinBuf.length >= 6) return;
   APP.pinBuf.push(n);
   updateDots();
   if (APP.pinBuf.length === 6) setTimeout(submitPin, 150);
@@ -70,19 +93,26 @@ async function submitPin() {
   // Se fija el usuario ANTES del await: si alguien cambia de usuario mientras
   // Firebase responde, el resultado viejo no puede abrir la sesión nueva
   const uid = APP.pinTarget;
+  const gen = pinGen;
   const pin = APP.pinBuf.join('');
   try {
+    // Tocaron "Cambiar usuario" entre el sexto dígito y el envío automático
+    if (!uid) return;
     if (!auth) {
       mostrarError(uid, 'Firebase no está listo, espera un momento');
       return;
     }
     await auth.signInWithEmailAndPassword(EMPLEADO_EMAIL[uid], pin);
-    if (APP.pinTarget !== uid) { await auth.signOut().catch(() => {}); return; }
+    if (APP.pinTarget !== uid || gen !== pinGen) { await auth.signOut().catch(() => {}); return; }
     // Confirma que la cuenta que acaba de iniciar sesión está mapeada al
     // empleado esperado (usuarios/{uid}, solo-lectura — ver firestore.rules).
     // Si no coincide, es un error de configuración (cuenta mal creada), no
     // un PIN incorrecto: se avisa distinto para no confundir al operador.
     const perfil = await db.collection('usuarios').doc(auth.currentUser.uid).get();
+    // Segunda comprobación: mientras se leía el perfil pudieron tocar
+    // "Cambiar usuario" y elegir a otra persona. Sin esto se abría la sesión
+    // del PIN anterior encima de la pantalla del nuevo (auditoría 2026-09-22).
+    if (APP.pinTarget !== uid || gen !== pinGen) { await auth.signOut().catch(() => {}); return; }
     if (!perfil.exists || perfil.data().empleadoId !== uid) {
       // Se muestra el UID: sin él, quien tiene que arreglarlo no sabe QUÉ
       // documento crear en la consola de Firebase, y el aviso es inútil.
@@ -173,6 +203,8 @@ export function logout() {
   APP.vp0 = ''; APP.vp0Cod = ''; APP.cqExcl = false;
   APP.activeCapDoc = null;
   invalidarLookups(); // un autollenado en vuelo no debe rellenar el formulario de la siguiente sesión
+  limpiarCacheCatalogo(); // lo que consultó una cuenta real no se le sirve a la demo
+  resetVistaMuestrista(); // el historial de Israel no le queda en pantalla a Jesús
   APP.activasSnap = [];
   APP.allCaps = [];
   APP.tareasSnap = [];
@@ -186,11 +218,16 @@ export function logout() {
   // (otra persona, otro ambiente) ni un segundo
   [['pend-list', '⏳', 'Cargando pendientes…'], ['proc-list', '⏱', 'Sin capturas activas'],
    ['tk-list', '⏳', 'Cargando tareas…'], ['db-list', '', ''], ['db-cmp', '', ''],
+   ['db-diag', '', ''], ['db-personas', '', ''], ['db-ranking', '', ''],
    ['pausas-list', '', ''], ['tk-body', '', ''], ['rbody', '', ''], ['cbody', '', '']].forEach(([id, ico, txt]) => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = txt ? '<div class="empty"><div class="ico">' + ico + '</div><p>' + txt + '</p></div>' : '';
   });
-  ['db0', 'db1', 'db2', 'db3'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
+  const dp = document.getElementById('dp'); if (dp) dp.value = 'month'; // la siguiente cuenta arranca en "Mes"
+  ['db0', 'db1', 'db2', 'db3'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.textContent = '—';
+    const s = document.getElementById(id + 's'); if (s) s.textContent = '';
+  });
   const pw = document.getElementById('pausas-wrap'); if (pw) pw.style.display = 'none';
   setBadgePendientes(0); // que no quede el conteo viejo al reingresar
   if (auth) auth.signOut().catch(() => {});

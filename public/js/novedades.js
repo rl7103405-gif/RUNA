@@ -43,6 +43,29 @@ export const DIAS_NOVEDAD_INICIAL = 30;
 
 export const NOVEDADES = [
   {
+    id: '2026-09-22-02',
+    fecha: '2026-09-22',
+    tipo: 'mejorado',
+    titulo: 'Dashboard nuevo: qué tanto se puede creer el cronómetro',
+    detalle: 'Los indicadores ya no cuentan las pruebas de agosto: arrancan el 7 de septiembre '
+      + '(el historial sigue completo). Arriba se ve cuántas fichas esperan aprobación. Una barra '
+      + 'muestra cuántas fichas tienen un tiempo que se puede medir y cuántas no: las que duraron '
+      + 'menos que el propio tejido (se abrieron al final) y las que dejaron el reloj corriendo de '
+      + 'noche. El tiempo solo sirve si la ficha se abre al empezar y se pide pausa al terminar el día. '
+      + 'El ranking queda en espera hasta que haya datos para comparar de forma justa.',
+  },
+  {
+    id: '2026-09-22-01',
+    fecha: '2026-09-22',
+    tipo: 'corregido',
+    titulo: 'Arreglos después de una revisión completa',
+    detalle: '"Cambiar usuario" ya cancela la entrada que iba a medias. Al salir, el historial de '
+      + 'un muestrista no le queda en pantalla al siguiente. Mientras se guarda una firma ya no se '
+      + 'puede salir a medias. Completar la OT de una tarea ya no falla cuando esa tarea tiene una '
+      + 'ficha descartada. Y si el internet falla al abrir la app, ya no se queda una página de error '
+      + 'guardada.',
+  },
+  {
     id: '2026-09-08-01',
     fecha: '2026-09-08',
     tipo: 'nuevo',
